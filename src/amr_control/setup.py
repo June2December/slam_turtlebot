@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'amr1_moveout = amr_control.amr1_moveout_follow_waypoints:main',
         ],
     },
 )
