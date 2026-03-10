@@ -15,8 +15,8 @@ setup(
     zip_safe=True,
     maintainer='sinya',
     maintainer_email='sinya3443@gmail.com',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='amr_control_node_package',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',
