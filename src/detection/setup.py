@@ -24,6 +24,11 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'capture_node = detection.capture_turtle4:main',
+            'rgb_detect = detection.obj_det_dual:main',
+            'amr2_detect_old = detection.obj_det_depth:main',
+            'amr2_detect = detection.obj_det_amr2:main',
+            'amr2_detect_unkonwn = detection.obj_det_depth_unknown:main',
         ],
     },
 )
