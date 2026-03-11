@@ -12,6 +12,7 @@ from rclpy.qos import qos_profile_sensor_data
 
 from sensor_msgs.msg import CompressedImage
 from ultralytics import YOLO
+from message_filters import Subscriber, ApproximateTimeSynchronizer # 이거 timestamp synch 하는용 (depth & rgb) - 둘이 시간 맞춰서 callback 호출해주는거 (동기화) - 둘이 시간차이가 좀 있어도 같이 처리할 수 있게 해주는거
 
 # ── 설정 ──────────────────────────────────────────────────────────────────
 NS           = "/robot1"    
@@ -87,7 +88,8 @@ class DetectDepthNode(Node):
         super().__init__("amr2_detector_w_depth")
 
         self._img_lock  = threading.Lock() # lock 안걸면 interrupt 당하니까
-        self._disp_lock = threading.Lock() 
+        self._disp_lock = threading.Lock()
+        self._pair_lock = threading.Lock() 
         self._rgb       = None
         self._depth     = None
         self._disp      = None  # display
@@ -96,18 +98,57 @@ class DetectDepthNode(Node):
         self.get_logger().info(f"YOLO 로드: {YOLO_WEIGHTS}")
 
         # 두 토픽 모두 CompressedImage 타입으로 구독 >> sensor_msgs.msg.CompressedImage
-        self.create_subscription(msg_type= CompressedImage, topic= RGB_TOPIC, callback= self.rgb_callback, qos_profile= qos_profile_sensor_data)
+        '''
+        qos_profile_sensor_data:
+        QoSProfile(
+            reliability = ReliabilityPolicy.BEST_EFFORT,
+            durability  = DurabilityPolicy.VOLATILE,
+            history     = HistoryPolicy.KEEP_LAST,
+            depth       = 5
+        )
+        '''
+        self.rgb_sub = self.create_subscription(msg_type= CompressedImage, topic= RGB_TOPIC, callback= self.rgb_callback, qos_profile= qos_profile_sensor_data)
 
-        self.create_subscription(msg_type= CompressedImage, topic= DEPTH_TOPIC, callback= self.depth_callback, qos_profile= qos_profile_sensor_data)
+        self.depth_sub = self.create_subscription(msg_type= CompressedImage, topic= DEPTH_TOPIC, callback= self.depth_callback, qos_profile= qos_profile_sensor_data)
 
         self._stop = threading.Event()
         self._last_log = 0.0
+
+        #
+        self.ts = ApproximateTimeSynchronizer(
+            [self.rgb_sub, self.depth_sub],
+            queue_size=10,
+            slop=0.05
+        )
+        self.ts.registerCallback(self.sync_callback)
+
+        #
 
         threading.Thread(target=self._worker, daemon=True).start()
         threading.Thread(target=self._gui,    daemon=True).start()
 
         self.get_logger().info(
             f"구독하는 토픽 타입 >> \n  RGB  : {RGB_TOPIC}\n  Depth: {DEPTH_TOPIC}")
+        
+        
+
+    def sync_callback(self, rgb_msg, depth_msg):
+        rgb_arr = np.frombuffer(rgb_msg.data, np.uint8)
+        rgb_img = cv2.imdecode(rgb_arr, cv2.IMREAD_COLOR)
+
+        depth_img = decode_compressed_depth(depth_msg)
+        if depth_img is not None and depth_img.dtype not in (np.uint16, np.float32):
+            depth_img = depth_img.astype(np.uint16)
+
+        if rgb_img is None or depth_img is None:
+            return
+
+        stamp_sec = rgb_msg.header.stamp.sec + rgb_msg.header.stamp.nanosec * 1e-9
+
+        with self._pair_lock:
+            # 최신 sync pair만 유지
+            self._latest_pair = (rgb_img, depth_img, stamp_sec)
+
 
     # ── ROS 콜백 ──────────────────────────────────────────────────────────
     def rgb_callback(self, msg):
