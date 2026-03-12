@@ -41,28 +41,36 @@ COLOR_MAP = {
 
 RGB_TOPIC   = "robot4/oakd/rgb/image_raw/compressed"
 DEPTH_TOPIC = "robot4/oakd/stereo/image_raw/compressedDepth"
+ROBOT_START_TOPIC = "/robot4/occupation"
+ENEMY_POS_TOPIC = "/AMR_1/enemy_pos"
+ROBOT_PULLOUT_TOPIC = "/AMR_1/tracking_done"
 
 class AmrObserve(Node):
     super().__init__('amr_observe')
     self.navigator = TurtleBot4Directions()
     self.mode = False
 
-    # self.create_subscription() #이미지 구독1
     self.create_subscription(
         CompressedImage, RGB_TOPIC,
-        self.cb, qos_profile_sensor_data) #이미지 구독1
+        self.cb, qos_profile_sensor_data
+        )
     
-    # self.create_subscription() #이미지 구독2
     self.create_subscription(
         CompressedImage, DEPTH_TOPIC,
-        self._cb_depth, qos_profile_sensor_data)
+        self._cb_depth, qos_profile_sensor_data
+        )
     
-    # self.create_subscription( '메시지 타입', '메시지 명', self.cb1, 10) #객체탐지 시작
+    self.create_subscription(
+        Bool, ROBOT_START_TOPIC, self.check_yolo_time_cb
+        )
 
-
-    # self.create_publisher() # 객체 위치 보냄
-
-    # self.create_publisher(, '메시지명', self.cb3, 10) #amr_복귀 노드에 메시지 보냄'
+    self.create_publisher(
+        Bool, ENEMY_POS_TOPIC
+        )
+    
+    self.create_publisher(
+        Bool, ROBOT_PULLOUT_TOPIC
+    )
 
     def check_yolo_time_cb():
         '객체탐지 시작 메시치 처리 cb'
