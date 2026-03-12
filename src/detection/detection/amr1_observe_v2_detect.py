@@ -21,15 +21,15 @@ from ultralytics import YOLO
 import numpy as np
 import math
 from time import time
+from collections import deque
 
 
 # ── 설정 ──────────────────────────────────────────────────────────────────
 NS             = "/robot4"
 YOLO_WEIGHTS   = "./src/models/amr1/yolo11n_amr1_v2.pt"
-CONF_THRESH    = 0.5
+CONF_THRESH    = 0.3
 DX, DY         = 0, 5
 LOG_INTERVAL   = 0.5
-WIN_W, WIN_H   = 960, 540
 
 CLASSES = ["balloon", "bird", "enemy", "friend"]
 
@@ -65,6 +65,7 @@ class AmrObserve(Node):
 
         self.rgb_img = None
         self.annotated_img = None
+        self.enemy_centers = deque(maxlen=3)
         # self.tf_buffer = Buffer()
         # self.tf_listener = TransformListener(self.tf_buffer, self)
         # self.navigator = TurtleBot4Navigator()
@@ -122,7 +123,7 @@ class AmrObserve(Node):
     def draw_bbox(self, imgs):
         '''bbox 선택'''
         results = self.yolo(imgs)
-        best_conf = 0.0
+        # best_conf = 0.0
         best_bbox = None
         best_center = None
         annotated_img = imgs.copy()
@@ -136,14 +137,12 @@ class AmrObserve(Node):
                 if conf < CONF_THRESH:
                     continue
 
-                if cls_name.lower() == 'enemy' and conf > best_conf:
-                    best_conf = conf
+                # if cls_name.lower() == 'enemy' and conf > best_conf:
+                if cls_name.lower() == 'enemy':
+                    # best_conf = conf
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     best_bbox   = (x1, y1, x2, y2)
                     best_center = ((x1 + x2) // 2, (y1 + y2) // 2)
-
-                if cls_name.lower() == 'enemy':
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
                     cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 0, 255), 2)
                     label = f'enemy {conf:.2f}'
                     cv2.putText(
@@ -160,6 +159,7 @@ class AmrObserve(Node):
             if self.rgb_img is None: return
             rgb_img = self.rgb_img.copy()
         
+        # rgb_img = cv2.resize(rgb_img, (640, 540))
         detected, bbox, center, annotated_img = self.draw_bbox(rgb_img)
 
         with self.lock:
@@ -167,6 +167,8 @@ class AmrObserve(Node):
             self.enemy_bbox = bbox
             self.enemy_center = center
             self.annotated_img = annotated_img
+            if center is not None:
+                self.enemy_centers.append(center)
 
         if self.enemy_detected:
             self.get_logger().info(f'적 항체 bbox={bbox}, center={center}')
@@ -193,6 +195,8 @@ class AmrObserve(Node):
         '''중심점이 없는 경우(객체 소실) 이전 계산값([가장 마지막 탐지 시점]과 
         [가장 최근 소실 시점]) 적용.'''
         '''만약 t-2에도 없으면 10도 회전.'''
+        # latest = self.enemy_centers[-1]  # 가장 최신 중심점
+
         pass
 
     def rotate_turtle1():
