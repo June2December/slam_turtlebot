@@ -72,7 +72,7 @@ class AmrPullout(Node):
         goal_pose.append(
             self.navigator.getPoseStamped(
                 [-0.09283551329186988, 1.0193024901658334],
-                TurtleBot4Directions.EAST
+                TurtleBot4Directions.SOUTH_EAST
             )
         )
 
