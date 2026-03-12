@@ -4,7 +4,7 @@ from rclpy.qos import qos_profile_sensor_data
 
 from sensor_msgs.msg import Image, CameraInfo, CompressedImage
 from geometry_msgs.msg import PointStamped, PoseStamped, Quaternion, PoseWithCovariance
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, msg
 import threading
 
 from cv_bridge import CvBridge
@@ -16,9 +16,10 @@ from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Navigator, Turt
 import cv2
 from ultralytics import YOLO
 
-
 import numpy as np
 import math
+from time import time
+
 
 # ── 설정 ──────────────────────────────────────────────────────────────────
 NS             = "/robot4"
@@ -51,43 +52,45 @@ ROBOT_PULLOUT_TOPIC = "/AMR_1/tracking_done"
 
 
 class AmrObserve(Node):
-    super().__init__('amr_observe')
-    self.navigator = TurtleBot4Directions()
-    # 상태머신
-    # WAIT
-    # DETECT : 발견
-    # TRACK : 추적(회전)
-    self.mode = 'WAIT'
+    def __init__(self):
+        super().__init__('amr_observe')
+        self.navigator = TurtleBot4Directions()
 
-    self.lock = threading.Lock()
+        # 상태머신
+        # WAIT : 노드 대기상태
+        # DETECT : 최초 발견
+        # TRACK : 객체 추적(회전)
+        self.mode = 'WAIT'
 
-    self.rgb_img = None
-    self.yolo = YOLO(YOLO_WEIGHTS)
+        self.lock = threading.Lock()
+
+        self.rgb_img = None
+        self.yolo = YOLO(YOLO_WEIGHTS)
 
 
 
 
 
-    self.create_subscription(
-        CompressedImage, RGB_TOPIC,
-        self.cb, qos_profile_sensor_data
-        )    
-    self.create_subscription(
-        CompressedImage, DEPTH_TOPIC,
-        self._cb_depth, qos_profile_sensor_data
-        )    
-    self.create_subscription(
-        Bool, ROBOT_START_TOPIC, 
-        self.check_yolo_time_cb
+        self.create_subscription(
+            CompressedImage, RGB_TOPIC,
+            self.decode_rgb_cb, qos_profile_sensor_data
+            )    
+        self.create_subscription(
+            CompressedImage, DEPTH_TOPIC,
+            self._cb_depth, qos_profile_sensor_data
+            )    
+        self.create_subscription(
+            Bool, ROBOT_START_TOPIC, 
+            self.check_yolo_start_cb
+            )
+        self.create_publisher(
+            Bool, ENEMY_POS_TOPIC
+            )    
+        self.create_publisher(
+            Bool, ROBOT_PULLOUT_TOPIC
         )
-    self.create_publisher(
-        Bool, ENEMY_POS_TOPIC
-        )    
-    self.create_publisher(
-        Bool, ROBOT_PULLOUT_TOPIC
-    )
 
-    def decode_rgb_cb():
+    def decode_rgb_cb(self, msg):
         arr = np.frombuffer(msg.data, np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         if img is not None:
@@ -95,8 +98,20 @@ class AmrObserve(Node):
                 self.rgb_img = img
 
 
-    def check_yolo_time_cb():
+    def check_yolo_start_cb(self, msg):
         '객체탐지 시작 메시치 처리 cb'
+        if msg.data == True:
+            self.mode = 'detect'
+            self.detect_yolo()
+            self.get_logger().info('탐지 상태 전환')
+        else:
+            self.get_logger().info('대기 상태 지속')
+
+
+
+
+
+
         pass
     
     def detect_yolo():
