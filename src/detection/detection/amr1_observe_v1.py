@@ -90,7 +90,6 @@ class AmrObserve(Node):
         '만약 t-2에도 없으면 10도 회전.' 
         pass
 
-
     def rotate_turtle1():
         '로봇방향 회전 : 터틀봇 회전'
         pass
