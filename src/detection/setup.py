@@ -29,6 +29,7 @@ setup(
             'amr2_detect_old = detection.obj_det_depth:main',
             'amr2_detect = detection.obj_det_amr2:main',
             'amr2_detect_unkonwn = detection.obj_det_depth_unknown:main',
+            'amr1_detect_test1 = detection.depth_aligned_dual:main',
         ],
     },
 )

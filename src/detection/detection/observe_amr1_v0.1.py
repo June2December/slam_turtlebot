@@ -1,0 +1,74 @@
+import rclpy
+from rclpy.node import Node
+
+from sensor_msgs.msg import Image, CameraInfo, CompressedImage
+from geometry_msgs.msg import PointStamped, PoseStamped, Quaternion, PoseWithCovariance
+from std_msgs.msg import Bool
+
+from cv_bridge import CvBridge
+
+from tf2_ros import Buffer, TransformListener
+import tf2_geometry_msgs
+from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Navigator, TurtleBot4Directions
+
+import numpy as np
+import cv2
+import math
+from ultralytics import YOLO
+
+class AmrObserve(Node):
+        super().__init__('amr_observe')
+        self.navigator = TurtleBot4Directions()
+        self.mode = False
+
+        # self.create_subscription() #이미지 구독1
+        # self.create_subscription() #이미지 구독2
+        # self.create_subscription( '메시지 타입', '메시지 명', self.cb1, 10) #객체탐지 시작
+
+        # self.create_publisher() # 객체 위치 보냄
+
+        # self.create_publisher(, '메시지명', self.cb3, 10) #amr_복귀 노드에 메시지 보냄'
+
+        def check_yolo_time_cb():
+            '객체탐지 시작 메시치 처리 cb'
+            pass
+        
+        def detect_yolo():
+            '객체탐지 : cls, bbox, center.'
+            pass
+
+        # def contain_img():
+        #     '이미지 저장 : 5개. 6번째 이미지가 있는 경우 가장 먼저 들어온 이미지 버림queue, 이미지 처리 단계인 이미지의 경우 다음 이미지 선택'
+        #     pass
+
+        def check_bbox_center():
+            '방향 계산 : 터틀봇의 화면 중심점과 bbox의 중심점간 차이 계산.'
+            '중심점이 없는 경우(객체 소실) 이전 계산값([가장 마지막 탐지 시점]과 [가장 최근 소실 시점]) 적용.'
+            '만약 t-2에도 없으면 10도 회전.' 
+            pass
+
+
+        def rotate_turtle1():
+            '로봇방향 회전 : 터틀봇 회전'
+            pass
+
+                            # def publish_object_img_cb():
+                            #     '객체 탐지 img 발행'
+                            #     pass
+
+        # def calculate_pixtomap():
+        #     '계산 pixel to map for UI'
+        #     pass
+
+        # def publish_map_pos_cb():
+        #     '객체 위치 전송'
+        #     pass
+
+
+def main():
+    rclpy.init()
+    node = AmrObserve()
+    rclpy.spin(node)
+
+if __name__=='main':
+    main()
