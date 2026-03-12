@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             'amr1_moveout = amr_control.amr1_moveout_follow_waypoints:main',
             'amr1_pullout = amr_control.amr1_pullout:main',
+            'amr1_tracking_aerial = amr_control.amr1_tracking_aerial:main',
         ],
     },
 )
