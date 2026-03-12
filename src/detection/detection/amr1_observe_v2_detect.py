@@ -25,7 +25,7 @@ from time import time
 
 # ── 설정 ──────────────────────────────────────────────────────────────────
 NS             = "/robot4"
-YOLO_WEIGHTS   = "./slam_turtlebot/src/models/amr1/yolo11n_amr1_v2.pt"
+YOLO_WEIGHTS   = "./src/models/amr1/yolo11n_amr1_v2.pt"
 CONF_THRESH    = 0.5
 DX, DY         = 0, 5
 LOG_INTERVAL   = 0.5
@@ -84,7 +84,7 @@ class AmrObserve(Node):
         #     )    
         self.create_subscription(
             Bool, ROBOT_DETECT_TOPIC, 
-            self.check_yolo_start_cb, 
+            self.check_yolo_start_cb, 10
             )
         self.create_publisher(
             Bool, ENEMY_POS_TOPIC, 10
