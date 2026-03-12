@@ -43,10 +43,10 @@ class AmrMoveout(Node):
         ######################################################################
         # 방향 매핑
         direction_map = {
-            "N": TurtleBot4Directions.NORTH,
-            "S": TurtleBot4Directions.SOUTH,
-            "E": TurtleBot4Directions.EAST,
-            "W": TurtleBot4Directions.WEST
+            "N": TurtleBot4Directions.NORTH_WEST,
+            "S": TurtleBot4Directions.SOUTH_EAST,
+            "E": TurtleBot4Directions.NORTH_EAST,
+            "W": TurtleBot4Directions.SOUTH_WEST
         }
         # 나중에 웹캠 방향 바뀌면 이거 바꾸면 될듯
         if msg.direction not in direction_map:
@@ -62,7 +62,8 @@ class AmrMoveout(Node):
             navigator.dock()
         
         # Set initial pose
-        initial_pose = navigator.getPoseStamped([0.0, 0.0], TurtleBot4Directions.SOUTH)
+        initial_pose = navigator.getPoseStamped([-0.1, 0.7], TurtleBot4Directions.EAST)
+        # initial_pose = navigator.getPoseStamped([0.0, 0.0], TurtleBot4Directions.EAST)
         navigator.setInitialPose(initial_pose)
 
         # Wait for Nav2
@@ -70,9 +71,9 @@ class AmrMoveout(Node):
         
         goal_pose = []
         # 경유지
-        goal_pose.append(navigator.getPoseStamped([-1.55069, 0.0668084], TurtleBot4Directions.WEST))
+        goal_pose.append(navigator.getPoseStamped([0.423, 1.86], TurtleBot4Directions.SOUTH_WEST))
         # 최종 진지 (방향만 동적)
-        goal_pose.append(navigator.getPoseStamped([-0.761671, -0.852567], target_dir))
+        goal_pose.append(navigator.getPoseStamped([-0.584, 2.2], target_dir))
         
         # 이제 진짜 출동
         navigator.undock()
