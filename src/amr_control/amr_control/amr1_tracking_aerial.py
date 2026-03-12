@@ -1,5 +1,9 @@
+import csv
+import time
+
 import cv2
 import numpy as np
+import struct
 from ultralytics import YOLO
 
 import rclpy
@@ -32,7 +36,7 @@ class TargetTracker(Node):
 
         ns = self.get_namespace()
         self.rgb_topic = f'{ns}/oakd/rgb/image_raw/compressed'
-        self.depth_topic = f'{ns}/oakd/stereo/image_raw'
+        self.depth_topic = f'{ns}/oakd/stereo/image_raw/compressedDepth'
 
         # -------- pub / sub --------
         self.create_subscription(Bool, 'occupation', self.occupation_callback, 10)
@@ -40,16 +44,24 @@ class TargetTracker(Node):
 
         # -------- sync --------
         self.rgb_sub = Subscriber(self, CompressedImage, self.rgb_topic)
-        self.depth_sub = Subscriber(self, Image, self.depth_topic)
-        self.ts = ApproximateTimeSynchronizer(
-            [self.rgb_sub, self.depth_sub],
+        self.depth_sub = Subscriber(self, CompressedImage, self.depth_topic)
+        self.ts = ApproximateTimeSynchronizer([self.rgb_sub, self.depth_sub],
             queue_size=30,
-            slop=1.0
+            slop=0.15
         )
         self.ts.registerCallback(self.synced_callback)
 
         self.logged_model_names = False
         self.logged_shape = False
+
+        self.csv_path = '/home/rokey/slam_turtlebot/src/amr_control/amr_control/data/depth_log.csv'
+        self.csv_file = open(self.csv_path, 'a', newline='')
+        self.csv_writer = csv.writer(self.csv_file)
+
+        # 파일이 비어 있으면 헤더 쓰기
+        if self.csv_file.tell() == 0:
+            self.csv_writer.writerow(['time', 'rgb_depth_dt', 'u', 'v', 'depth_center'])
+            self.csv_file.flush()
 
         self.get_logger().info('tracker start')
 
@@ -65,14 +77,19 @@ class TargetTracker(Node):
 
     # -------- rgb/depth sync 확인 + yolo 확인 + 회전만 테스트 --------
     def synced_callback(self, rgb_msg, depth_msg):
-        print("동기 시도 하고는 있습니다.")
+        rgb_t = rgb_msg.header.stamp.sec + rgb_msg.header.stamp.nanosec * 1e-9
+        depth_t = depth_msg.header.stamp.sec + depth_msg.header.stamp.nanosec * 1e-9
+        dt = abs(rgb_t - depth_t)
+
+        print(f'sync는 되나? | rgb, depth 의 dt={dt:.3f}s')
+
         if not self.tracking_enabled:
             return
 
         try:
             np_arr = np.frombuffer(rgb_msg.data, np.uint8)
             rgb = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-            depth = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
+            depth = self.decode_compressed_depth(depth_msg)
         except Exception as e:
             self.get_logger().error(f'image convert fail: {e}')
             return
@@ -126,9 +143,12 @@ class TargetTracker(Node):
         u = int((x1 + x2) / 2)
         v = int((y1 + y2) / 2)
 
-        self.get_logger().info(
-            f'detect cls={best_cls_name}, conf={best_conf:.2f}, center=({u},{v})'
-        )
+        print(f'detect cls={best_cls_name}, conf={best_conf:.2f}, center=({u},{v})')
+        depth_value = depth[v, u]
+        self.csv_writer.writerow([time.time(), dt, u, v, float(depth_value)])
+        self.csv_file.flush()
+
+        print(f"픽셀 중앙: ({u},{v}) depth={depth_value}")
 
         angular_z = self.compute_angular_z(u, rgb.shape[1])
         self.publish_rotation(angular_z)
@@ -170,6 +190,58 @@ class TargetTracker(Node):
     # -------- 회전 멈춤 --------
     def stop_rotation(self):
         self.publish_rotation(0.0)
+    
+    # -------- 압축 풀기 --------
+    def decode_compressed_depth(self, msg: CompressedImage):
+        try:
+            # 예: "16UC1; compressedDepth png"
+            # 예: "32FC1; compressedDepth png"
+            fmt = msg.format
+            if ';' not in fmt:
+                self.get_logger().warn(f'invalid compressedDepth format: {fmt}')
+                return None
+
+            depth_fmt, compr_type = fmt.split(';')
+            depth_fmt = depth_fmt.strip()
+            compr_type = compr_type.strip()
+
+            if 'compressedDepth' not in compr_type:
+                self.get_logger().warn(f'not compressedDepth: {fmt}')
+                return None
+
+            # compressedDepth는 앞부분 헤더 + 뒤쪽 PNG 데이터 구조
+            # 일반적으로 12바이트 헤더를 제거 후 PNG decode
+            raw = np.frombuffer(msg.data, dtype=np.uint8)
+            if raw.size <= 12:
+                self.get_logger().warn('compressedDepth data too short')
+                return None
+
+            png_data = raw[12:]
+            depth = cv2.imdecode(png_data, cv2.IMREAD_UNCHANGED)
+
+            if depth is None:
+                self.get_logger().warn('cv2.imdecode failed for compressedDepth')
+                return None
+
+            # 16UC1이면 보통 여기서 끝
+            if depth_fmt == '16UC1':
+                return depth
+
+            # 32FC1은 compressedDepth에서 quantization header를 해석해야 하는 경우가 있음
+            # 현장에서는 raw depth topic 쓰는 것이 더 안전
+            if depth_fmt == '32FC1':
+                self.get_logger().warn(
+                    '32FC1 compressedDepth detected. '
+                    'PNG decode only may be insufficient; raw depth topic is recommended.'
+                )
+                return depth
+
+            self.get_logger().warn(f'unknown depth format: {depth_fmt}')
+            return depth
+
+        except Exception as e:
+            self.get_logger().error(f'decode_compressed_depth fail: {e}')
+            return None
 
 
 def main():
@@ -196,6 +268,11 @@ def main():
 
         try:
             rclpy.shutdown()
+        except Exception:
+            pass
+
+        try:
+            node.csv_file.close()
         except Exception:
             pass
 
