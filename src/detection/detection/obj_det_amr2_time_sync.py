@@ -14,6 +14,8 @@ from sensor_msgs.msg import CompressedImage
 from ultralytics import YOLO
 from message_filters import Subscriber, ApproximateTimeSynchronizer # 이거 timestamp synch 하는용 (depth & rgb) - 둘이 시간 맞춰서 callback 호출해주는거 (동기화) - 둘이 시간차이가 좀 있어도 같이 처리할 수 있게 해주는거
 
+from cv_bridge import CvBridge
+
 # ── 설정 ──────────────────────────────────────────────────────────────────
 NS           = "/robot1"    
 YOLO_WEIGHTS = "/home/sinya/slam_turtlebot/src/models/arm2/best.pt"
@@ -86,6 +88,9 @@ def get_depth_to_m(depth_al, x1, y1, x2, y2, shrink=0.5):
 class DetectDepthNode(Node):
     def __init__(self):
         super().__init__("amr2_detector_w_depth")
+        self.bridge = CvBridge()
+        self.K = None  # Camera intrinsics
+        self.lock = threading.Lock()
 
         self._img_lock  = threading.Lock() # lock 안걸면 interrupt 당하니까
         self._disp_lock = threading.Lock()
@@ -131,23 +136,48 @@ class DetectDepthNode(Node):
             f"구독하는 토픽 타입 >> \n  RGB  : {RGB_TOPIC}\n  Depth: {DEPTH_TOPIC}")
         
         
+    # origin
+    # def sync_callback(self, rgb_msg, depth_msg):
+    #     rgb_arr = np.frombuffer(rgb_msg.data, np.uint8)
+    #     rgb_img = cv2.imdecode(rgb_arr, cv2.IMREAD_COLOR)
 
-    def sync_callback(self, rgb_msg, depth_msg):
-        rgb_arr = np.frombuffer(rgb_msg.data, np.uint8)
-        rgb_img = cv2.imdecode(rgb_arr, cv2.IMREAD_COLOR)
+    #     depth_img = decode_compressed_depth(depth_msg)
+    #     if depth_img is not None and depth_img.dtype not in (np.uint16, np.float32):
+    #         depth_img = depth_img.astype(np.uint16)
 
-        depth_img = decode_compressed_depth(depth_msg)
-        if depth_img is not None and depth_img.dtype not in (np.uint16, np.float32):
-            depth_img = depth_img.astype(np.uint16)
+    #     if rgb_img is None or depth_img is None:
+    #         return
 
-        if rgb_img is None or depth_img is None:
-            return
+    #     stamp_sec = rgb_msg.header.stamp.sec + rgb_msg.header.stamp.nanosec * 1e-9
 
-        stamp_sec = rgb_msg.header.stamp.sec + rgb_msg.header.stamp.nanosec * 1e-9
+    #     with self._pair_lock:
+    #         # 최신 sync pair만 유지
+    #         self._latest_pair = (rgb_img, depth_img, stamp_sec)
 
-        with self._pair_lock:
-            # 최신 sync pair만 유지
-            self._latest_pair = (rgb_img, depth_img, stamp_sec)
+    # time sync 콜백
+    def synced_callback(self, rgb_msg, depth_msg):
+        """ Called when RGB and Depth frames arrive together (synchronized) """
+        try:
+            with self.lock:
+                # Decode RGB image from compressed format
+                np_arr = np.frombuffer(rgb_msg.data, np.uint8)
+                rgb = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                if rgb is not None and rgb.size > 0:
+                    if not self.logged_rgb_shape:
+                        self.get_logger().info(f"RGB image shape: {rgb.shape}")
+                        self.logged_rgb_shape = True
+                    self.rgb_image = rgb
+
+                # Convert Depth image from ROS format to OpenCV
+                depth = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
+                if depth is not None and depth.size > 0:
+                    if not self.logged_depth_shape:
+                        self.get_logger().info(f"Depth image shape: {depth.shape}")
+                        self.logged_depth_shape = True
+                    self.depth_image = depth
+                    self.camera_frame = depth_msg.header.frame_id
+        except Exception as e:
+            self.get_logger().error(f"Synced callback failed: {e}")
 
 
     # ── ROS 콜백 ──────────────────────────────────────────────────────────
