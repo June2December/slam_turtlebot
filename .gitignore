@@ -2,3 +2,12 @@
 log/
 build/
 install/
+
+## pycache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+## 학습 모델에 사용한 코드, 데이터셋 모두 제외
+model_n_dataset/

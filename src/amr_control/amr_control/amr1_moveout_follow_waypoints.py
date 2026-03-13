@@ -1,10 +1,8 @@
 """
 1. 객체 탐지 여부에 대한 토픽(커스텀 메세지) 받음
-    - /target_event 토픽 하나 만들게
-        
+    - /target_event 토픽 하나 만들게        
 2. 진지 점령 / 이때 바로 주사격 방향 지향
     - 점령 했다면 이 노드는 죽어야지
-
 
 ============ 아래가 커스텀 메세지 임============
 토픽 이름은 /target_event 잉
@@ -16,7 +14,6 @@ import rclpy
 from rclpy.node import Node
 from amr_interfaces.msg import TargetEvent
 from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Directions, TurtleBot4Navigator
-
 
 class AmrMoveout(Node):
     def __init__(self):
@@ -43,10 +40,10 @@ class AmrMoveout(Node):
         ######################################################################
         # 방향 매핑
         direction_map = {
-            "N": TurtleBot4Directions.NORTH,
-            "S": TurtleBot4Directions.SOUTH,
-            "E": TurtleBot4Directions.EAST,
-            "W": TurtleBot4Directions.WEST
+            "N": TurtleBot4Directions.NORTH_WEST,
+            "S": TurtleBot4Directions.SOUTH_EAST,
+            "E": TurtleBot4Directions.NORTH_EAST,
+            "W": TurtleBot4Directions.SOUTH_WEST
         }
         # 나중에 웹캠 방향 바뀌면 이거 바꾸면 될듯
         if msg.direction not in direction_map:
@@ -62,7 +59,8 @@ class AmrMoveout(Node):
             navigator.dock()
         
         # Set initial pose
-        initial_pose = navigator.getPoseStamped([0.0, 0.0], TurtleBot4Directions.SOUTH)
+        initial_pose = navigator.getPoseStamped([-0.1, 0.7], TurtleBot4Directions.EAST)
+        # initial_pose = navigator.getPoseStamped([0.0, 0.0], TurtleBot4Directions.EAST)
         navigator.setInitialPose(initial_pose)
 
         # Wait for Nav2
@@ -70,9 +68,9 @@ class AmrMoveout(Node):
         
         goal_pose = []
         # 경유지
-        goal_pose.append(navigator.getPoseStamped([-1.55069, 0.0668084], TurtleBot4Directions.WEST))
+        goal_pose.append(navigator.getPoseStamped([0.423, 1.86], TurtleBot4Directions.SOUTH_WEST))
         # 최종 진지 (방향만 동적)
-        goal_pose.append(navigator.getPoseStamped([-0.761671, -0.852567], target_dir))
+        goal_pose.append(navigator.getPoseStamped([-0.584, 2.2], target_dir))
         
         # 이제 진짜 출동
         navigator.undock()
