@@ -31,7 +31,7 @@ setup(
             'amr2_detect_unkonwn = detection.obj_det_depth_unknown:main',
             'amr1_detect_test1 = detection.depth_aligned_dual:main',
             'amr1_detect_test2 = detection.amr1_observe_v2_detect:main'
-            'amr1_detect_test3 = detection.amr1_observe_v3_detect:main'
+            'amr1_detect_test3 = detection.amr1_observe_v3_rotate:main'
         ],
     },
 )

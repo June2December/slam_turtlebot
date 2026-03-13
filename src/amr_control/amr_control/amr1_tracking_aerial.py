@@ -276,7 +276,7 @@ class TargetTracker(Node):
     # -------- 회전 멈춤 --------
     def stop_rotation(self):
         self.publish_rotation(0.0)
-    
+ 
     # -------- 압축 풀기 --------
     def decode_compressed_depth(self, msg: CompressedImage):
         try:

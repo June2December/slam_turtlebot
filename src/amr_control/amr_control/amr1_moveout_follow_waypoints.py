@@ -1,10 +1,8 @@
 """
 1. 객체 탐지 여부에 대한 토픽(커스텀 메세지) 받음
-    - /target_event 토픽 하나 만들게
-        
+    - /target_event 토픽 하나 만들게        
 2. 진지 점령 / 이때 바로 주사격 방향 지향
     - 점령 했다면 이 노드는 죽어야지
-
 
 ============ 아래가 커스텀 메세지 임============
 토픽 이름은 /target_event 잉
@@ -16,7 +14,6 @@ import rclpy
 from rclpy.node import Node
 from amr_interfaces.msg import TargetEvent
 from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Directions, TurtleBot4Navigator
-
 
 class AmrMoveout(Node):
     def __init__(self):
