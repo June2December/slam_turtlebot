@@ -9,7 +9,7 @@ from rclpy.duration import Duration
 from ultralytics import YOLO
 
 from sensor_msgs.msg import CameraInfo, Image, CompressedImage
-from geometry_msgs.msg import PointStamped, Twist
+from geometry_msgs.msg import PointStamped, Twist, Point
 from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformListener
 import tf2_geometry_msgs
@@ -32,8 +32,8 @@ class TargetTracker(Node):
         self.bridge = CvBridge()
         self.tracking_enabled = False
 
-        self.rotate_kp = 0.8
-        self.max_angular_speed = 0.8
+        self.rotate_kp = 0.7
+        self.max_angular_speed = 0.7
         self.min_angular_speed = 0.05
         self.center_tolerance_ratio = 0.05
 
@@ -45,17 +45,9 @@ class TargetTracker(Node):
         self.depth_topic = f'{ns}/oakd/stereo/image_raw/compressedDepth'
 
         # pub / sub
-        self.create_subscription(Bool, '/occupation', self.occupation_callback, 10)
+        self.create_subscription(Bool, 'occupation', self.occupation_callback, 10)
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
-
-        # ===================== [DEBUG 퍼블리셔 시작] =====================
-        # rqt_image_view 에서 {ns}/dbg/image 토픽 선택해서 확인
-        # 바운딩박스 + 중앙 십자선 + depth 수치 오버레이
-        # 확인 끝나면 이 블록 + synced_callback 안의 DEBUG 블록 같이 삭제
-        self._dbg_pub   = self.create_publisher(Image, f'{ns}/dbg/image', 1)
-        self._dbg_timer = self.create_timer(0.05, self._dbg_publish)
-        self._dbg_frame = None
-        # ===================== [DEBUG 퍼블리셔 끝] =====================
+        self.enemy_pose_pub = self.create_publisher(Point, 'enemy_pose', 10)
 
         # sync
         self.rgb_sub   = Subscriber(self, CompressedImage, self.rgb_topic)
@@ -124,17 +116,40 @@ class TargetTracker(Node):
     def camera_point_to_map(self, x, y, z, stamp):
         if self.camera_frame is None:
             return None
-        pt = PointStamped()
-        pt.header.stamp    = stamp
-        pt.header.frame_id = self.camera_frame
-        pt.point.x, pt.point.y, pt.point.z = x, y, z
-        try:
-            # tf_buffer.transform 방식 — lookup + do_transform 한번에
-            pt_map = self.tf_buffer.transform(pt, 'map', timeout=Duration(seconds=0.3))
-            return pt_map.point.x, pt_map.point.y, pt_map.point.z
-        except Exception as e:
-            print(f'TF 실패: {e}')
+
+        frame_id = self.camera_frame
+
+        pt_camera = PointStamped()
+        pt_camera.header.stamp = stamp
+        pt_camera.header.frame_id = frame_id
+        pt_camera.point.x = float(x)
+        pt_camera.point.y = float(y)
+        pt_camera.point.z = float(z)
+
+        if not self.tf_buffer.can_transform(
+            'map',
+            frame_id,
+            Time.from_msg(stamp),
+            timeout=Duration(seconds=0.2)
+        ):
+            self.get_logger().warn(f'map TF not ready yet: map <- {frame_id}')
             return None
+
+        try:
+            pt_map = self.tf_buffer.transform(
+                pt_camera,
+                'map',
+                timeout=Duration(seconds=1.0)
+            )
+        except Exception as e:
+            self.get_logger().warn(f'TF transform failed: {e}')
+            return None
+
+        self.get_logger().info(
+            f"Map coordinate: ({pt_map.point.x:.2f}, {pt_map.point.y:.2f}, {pt_map.point.z:.2f})"
+        )
+
+        return (pt_map.point.x, pt_map.point.y, pt_map.point.z)
 
     def occupation_callback(self, msg):
         self.tracking_enabled = msg.data
@@ -225,11 +240,12 @@ class TargetTracker(Node):
 
         map_xyz = self.camera_point_to_map(cam_xyz[0], cam_xyz[1], cam_xyz[2], rgb_msg.header.stamp)
         if map_xyz is None:
-            print('TF 실패 — cam xyz만 저장')
+            print(f'cam=({cam_xyz[0]:.3f},{cam_xyz[1]:.3f},{cam_xyz[2]:.3f})  map=(nan,nan,nan)')
             map_xyz = (np.nan, np.nan, np.nan)
-
-        print(f'cam=({cam_xyz[0]:.3f},{cam_xyz[1]:.3f},{cam_xyz[2]:.3f})  '
-              f'map=({map_xyz[0]:.3f},{map_xyz[1]:.3f},{map_xyz[2]:.3f})')
+        else:
+            print(f'cam=({cam_xyz[0]:.3f},{cam_xyz[1]:.3f},{cam_xyz[2]:.3f})  '
+                f'map=({map_xyz[0]:.3f},{map_xyz[1]:.3f},{map_xyz[2]:.3f})')
+            self.publish_enemy_pose(map_xyz[0], map_xyz[1], map_xyz[2])
 
         self.csv_writer.writerow([
             time.time(), dt, u, v,
@@ -252,24 +268,13 @@ class TargetTracker(Node):
         cv2.circle(dbg, (u, v), 4, (0, 255, 255), -1)
         cv2.putText(dbg, f'{depth_value/1000:.2f}m',
                     (u + 10, v - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-        self._dbg_frame = dbg
+        # cv2.imshow('tracker_debug', dbg)
+        # cv2.waitKey(1)
         # ===================== [DEBUG 오버레이 끝] =====================
 
         angular_z = self.compute_angular_z(u, rgb.shape[1])
         self.publish_rotation(angular_z)
         print(f'angular.z={angular_z:.3f}')
-
-    # ===================== [DEBUG 퍼블리셔 시작] =====================
-    def _dbg_publish(self):
-        if self._dbg_frame is None:
-            return
-        try:
-            msg = self.bridge.cv2_to_imgmsg(self._dbg_frame, encoding='bgr8')
-            msg.header.stamp = self.get_clock().now().to_msg()
-            self._dbg_pub.publish(msg)
-        except Exception as e:
-            print(f'dbg 퍼블리시 실패: {e}')
-    # ===================== [DEBUG 퍼블리셔 끝] =====================
 
     def compute_angular_z(self, u, image_width):
         center_x   = image_width / 2.0
@@ -294,6 +299,15 @@ class TargetTracker(Node):
             self.cmd_vel_pub.publish(twist)
         except Exception as e:
             print(f'cmd_vel 발행 실패: {e}')
+    def publish_enemy_pose(self, x, y, z):
+        msg = Point()
+        msg.x = float(x)
+        msg.y = float(y)
+        msg.z = float(z)
+        try:
+            self.enemy_pose_pub.publish(msg)
+        except Exception as e:
+            print(f'enemy_pose 발행 실패: {e}')
 
     def stop_rotation(self):
         self.publish_rotation(0.0)
@@ -339,7 +353,10 @@ def main():
             node.csv_file.close()
         except Exception:
             pass
-
+        try:
+            cv2.destroyAllWindows()
+        except Exception:
+            pass
 
 if __name__ == '__main__':
     main()

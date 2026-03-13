@@ -1,4 +1,5 @@
 from setuptools import find_packages, setup
+import glob
 
 package_name = 'amr_control'
 
@@ -10,6 +11,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/amr_control/launch', glob.glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -35,7 +37,8 @@ setup(
             'amr1_tracking_test7 = amr_control.amr1_rotate_circle2_time:main',
             'amr1_tracking_test8 = amr_control.amr1_rotate_circle3_IMU:main',
             'amr1_tracking_test9 = amr_control.amr1_rotate_circle4_odometry:main',
-            'amr1_moveout_then_tracking = amr_control.amr1_moveout_then_tracking:main',
+            'amr1_disapper2 = amr_control.amr1_tracking_aerial_disappear2:main',
+            'amr1_retrack2 = amr_control.amr1_tracking_aerial_retracking2:main',
         ],
     },
 )

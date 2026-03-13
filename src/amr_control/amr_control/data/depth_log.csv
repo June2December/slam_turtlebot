@@ -1,1 +1,2 @@
-time,dt,u,v,depth_center,cam_x,cam_y,cam_z,map_x,map_y,map_z
+time,dt,u,v,depth_raw,depth_maf,cam_x,cam_y,cam_z,map_x,map_y,map_z
+1773404127.7783551,0.043465375900268555,430,202,2324.0,2324.0,0.31233291004878516,-0.6202697217116487,2.324,nan,nan,nan

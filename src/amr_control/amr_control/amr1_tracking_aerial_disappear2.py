@@ -34,6 +34,7 @@ class TargetTracker(Node):
         self.max_angular_speed = 0.8
         self.min_angular_speed = 0.05
         self.center_tolerance_ratio = 0.05
+        self.frame_count = 0
 
         self.yolo_model_path = './db/yolo11n.pt'
         self.model = YOLO(self.yolo_model_path)
@@ -146,6 +147,10 @@ class TargetTracker(Node):
         dt = abs(rgb_t - depth_t)
 
         print(f'sync는 되나? | rgb, depth 의 dt={dt:.3f}s')
+
+        self.frame_count += 1
+        if self.frame_count % 3 != 0:
+            return
 
         if not self.tracking_enabled:
             return

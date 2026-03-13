@@ -1,8 +1,10 @@
 """
 1. 객체 탐지 여부에 대한 토픽(커스텀 메세지) 받음
-    - /target_event 토픽 하나 만들게        
+    - /target_event 토픽 하나 만들게
+        
 2. 진지 점령 / 이때 바로 주사격 방향 지향
     - 점령 했다면 이 노드는 죽어야지
+
 
 ============ 아래가 커스텀 메세지 임============
 토픽 이름은 /target_event 잉
@@ -13,7 +15,9 @@ string direction        N, S, W, E  중 하나만 꼭 보내라잉 여기선 다
 import rclpy
 from rclpy.node import Node
 from amr_interfaces.msg import TargetEvent
+from std_msgs.msg import Bool
 from turtlebot4_navigation.turtlebot4_navigator import TurtleBot4Directions, TurtleBot4Navigator
+
 
 class AmrMoveout(Node):
     def __init__(self):
@@ -23,9 +27,11 @@ class AmrMoveout(Node):
         self.navigator = TurtleBot4Navigator()
         # 종복 방지용 : topic 계속 받으면 현재 추적하고 있는애 추적이 우선이지
         self.started = False
-        self.done = False
+
+        self.occupation_pub = self.create_publisher(Bool, 'occupation', 10)
+        self.result_timer = None
         # 얘가 해당 이름의 토픽을 국룰 인 10까지만 쌓아두는걸로 하고, 어차피 중복 방지는 started 있으니까
-        self.create_subscription(TargetEvent, '/target_event', self.target_cb, 10)
+        self.create_subscription(TargetEvent, 'target_event', self.target_cb, 10)
     
     
     def target_cb(self, msg):
@@ -76,9 +82,34 @@ class AmrMoveout(Node):
         # 이제 진짜 출동
         navigator.undock()
         navigator.startFollowWaypoints(goal_pose)
-        self.done = True  # 웨이포인트 완료 → 런처에서 감지
-
+        
         # 점령 다 했으면 이 노드는 사라져 줘야지?
+        # 죽기전에 topic 보내야 하나? 이제 추적 하라고?
+        # waypoint 완료 감시 시작
+        self.result_timer = self.create_timer(0.5, self.check_nav_result)
+    def check_nav_result(self):
+        navigator = self.navigator
+
+        if not navigator.isTaskComplete():
+            return
+
+        print("진지 점령 완료")
+
+        # occupation 토픽 발행
+        msg = Bool()
+        msg.data = True
+        self.occupation_pub.publish(msg)
+
+        print("occupation=True 발행 → tracking 시작")
+
+        # 타이머 종료
+        if self.result_timer is not None:
+            self.result_timer.cancel()
+
+        # 바로 destroy 하지 말고 약간 여유
+        self.create_timer(0.5, self.shutdown_once)
+    def shutdown_once(self):
+        self.destroy_node()
 
 def main():
     rclpy.init()

@@ -1,39 +1,37 @@
-import math
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
-
-
-ROTATION_SPEED = 0.5  # rad/s
-ROTATION_DURATION = 2 * math.pi / ROTATION_SPEED  # ~12.6초
+import sys
 
 
 class RotateOnce(Node):
-    def __init__(self):
-        super().__init__('rotate_once')
-        self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.start_time = self.get_clock().now().nanoseconds / 1e9
+    def __init__(self, namespace=''):
+        super().__init__('rotate_once')  # ✅ 네임스페이스 주입
+        self.pub = self.create_publisher(Twist, '/robot4/cmd_vel', 10)
         self.timer = self.create_timer(0.1, self.tick)
-        self.get_logger().info('제자리 360도 회전 시작')
+        self.count = 0
 
     def tick(self):
-        elapsed = self.get_clock().now().nanoseconds / 1e9 - self.start_time
-        msg = Twist()
-
-        if elapsed < ROTATION_DURATION:
-            msg.angular.z = ROTATION_SPEED
+        if self.count < 126:
+            msg = Twist()
+            msg.angular.z = 0.5
             self.pub.publish(msg)
+            self.count += 1
         else:
-            self.pub.publish(msg)  # 정지
-            self.get_logger().info('회전 완료')
+            self.pub.publish(Twist())
             self.timer.cancel()
-            rclpy.shutdown()
+            self.get_logger().info('완료')
+            raise SystemExit
 
 
 def main():
     rclpy.init()
-    rclpy.spin(RotateOnce())
-
-
-if __name__ == '__main__':
-    main()
+    # 실행 시: python rotate.py robot1  (네임스페이스 인자)
+    ns = sys.argv[1] if len(sys.argv) > 1 else ''
+    node = RotateOnce(namespace=ns)
+    try:
+        rclpy.spin(node)
+    except SystemExit:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()

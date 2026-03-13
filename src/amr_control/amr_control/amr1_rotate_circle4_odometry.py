@@ -17,8 +17,8 @@ def yaw_from_quaternion(q):
 class RotateOnceOdom(Node):
     def __init__(self):
         super().__init__('rotate_once_odom')
-        self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
+        self.pub = self.create_publisher(Twist, '/robot4/cmd_vel', 10)
+        self.create_subscription(Odometry, '/robot4/odom', self.odom_callback, 10)
         self.accumulated = 0.0
         self.prev_yaw = None
         self.done = False
@@ -57,8 +57,18 @@ class RotateOnceOdom(Node):
 
 def main():
     rclpy.init()
-    rclpy.spin(RotateOnceOdom())
+    node = RotateOnceOdom()
+    try:
+        while rclpy.ok() and not node.done:
+            rclpy.spin_once(node, timeout_sec=0.1)
+    except KeyboardInterrupt:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()
 
+
+if __name__ == '__main__':
+    main()
 
 if __name__ == '__main__':
     main()
