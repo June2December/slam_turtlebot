@@ -6,6 +6,10 @@ import numpy as np
 import struct
 from ultralytics import YOLO
 
+from sensor_msgs.msg import CameraInfo
+from geometry_msgs.msg import PointStamped
+from tf2_ros import Buffer, TransformListener
+
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
@@ -47,12 +51,23 @@ class TargetTracker(Node):
         self.depth_sub = Subscriber(self, CompressedImage, self.depth_topic)
         self.ts = ApproximateTimeSynchronizer([self.rgb_sub, self.depth_sub],
             queue_size=30,
-            slop=0.15
+            slop=0.1
         )
         self.ts.registerCallback(self.synced_callback)
 
         self.logged_model_names = False
         self.logged_shape = False
+
+        # -------- tf --------
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        # -------- 카메라 내부 파라미터 --------
+        self.K = None
+        self.camera_frame = None
+        self.camera_info_topic = f'{ns}/oakd/rgb/camera_info'
+
+        self.create_subscription(CameraInfo, self.camera_info_topic, self.camera_info_callback, 10)
 
         self.csv_path = '/home/rokey/slam_turtlebot/src/amr_control/amr_control/data/depth_log.csv'
         self.csv_file = open(self.csv_path, 'a', newline='')
@@ -60,10 +75,58 @@ class TargetTracker(Node):
 
         # 파일이 비어 있으면 헤더 쓰기
         if self.csv_file.tell() == 0:
-            self.csv_writer.writerow(['time', 'rgb_depth_dt', 'u', 'v', 'depth_center'])
+            self.csv_writer.writerow(['time', 'dt', 'u', 'v', 'depth_center', 'cam_x', 'cam_y', 'cam_z', 'map_x', 'map_y', 'map_z'])
             self.csv_file.flush()
 
         self.get_logger().info('tracker start')
+
+    # -------- 3D 점으로 바꿀때 그 info 읽어야 --------
+    def camera_info_callback(self, msg):
+        self.K = msg.k
+        self.camera_frame = msg.header.frame_id
+    
+    def pixel_to_3d(self, u, v, depth_value):
+        if self.K is None:
+            return None
+
+        fx = self.K[0]
+        fy = self.K[4]
+        cx = self.K[2]
+        cy = self.K[5]
+
+        z = float(depth_value) / 1000.0  # mm -> m
+        if z <= 0.0:
+            return None
+
+        x = (u - cx) * z / fx
+        y = (v - cy) * z / fy
+        return x, y, z
+    # -------- 카메라 점을 map 으로 tf 변환 --------
+    def camera_point_to_map(self, x, y, z, stamp):
+        if self.camera_frame is None:
+            return None
+
+        pt = PointStamped()
+        pt.header.stamp = stamp
+        pt.header.frame_id = self.camera_frame
+        pt.point.x = x
+        pt.point.y = y
+        pt.point.z = z
+
+        try:
+            tf_msg = self.tf_buffer.lookup_transform(
+                'map',
+                self.camera_frame,
+                stamp
+            )
+        except Exception as e:
+            self.get_logger().warn(f'tf lookup fail: {e}')
+            return None
+
+        # PointStamped 변환
+        import tf2_geometry_msgs
+        map_pt = tf2_geometry_msgs.do_transform_point(pt, tf_msg)
+        return map_pt.point.x, map_pt.point.y, map_pt.point.z
 
     # -------- 추적 on/off --------
     def occupation_callback(self, msg):
@@ -145,7 +208,30 @@ class TargetTracker(Node):
 
         print(f'detect cls={best_cls_name}, conf={best_conf:.2f}, center=({u},{v})')
         depth_value = depth[v, u]
-        self.csv_writer.writerow([time.time(), dt, u, v, float(depth_value)])
+
+        cam_xyz = self.pixel_to_3d(u, v, depth_value)
+        if cam_xyz is None:
+            self.get_logger().warn('pixel_to_3d fail')
+            return
+
+        map_xyz = self.camera_point_to_map(
+            cam_xyz[0], cam_xyz[1], cam_xyz[2], rgb_msg.header.stamp
+        )
+        if map_xyz is None:
+            self.get_logger().warn('camera_point_to_map fail')
+            return
+
+        print(f'map xyz = ({map_xyz[0]:.3f}, {map_xyz[1]:.3f}, {map_xyz[2]:.3f})')
+
+        self.csv_writer.writerow([
+            time.time(),
+            dt,
+            u,
+            v,
+            float(depth_value),
+            cam_xyz[0], cam_xyz[1], cam_xyz[2],
+            map_xyz[0], map_xyz[1], map_xyz[2],
+        ])
         self.csv_file.flush()
 
         print(f"픽셀 중앙: ({u},{v}) depth={depth_value}")
