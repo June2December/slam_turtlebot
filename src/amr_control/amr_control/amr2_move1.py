@@ -11,10 +11,12 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.duration import Duration
 
 from sensor_msgs.msg import Image, CameraInfo, CompressedImage
-from amr_interfaces.msg import TargetEvent
+from amr_interfaces.msg import TargetEvent               # 외부 웹캠 감지 트리거 메시지
 from geometry_msgs.msg import PointStamped
-from irobot_create_msgs.msg import AudioNoteVector, AudioNote
+from geometry_msgs.msg import PoseWithCovarianceStamped  # AMCL 로봇 위치 메시지
+from irobot_create_msgs.msg import AudioNoteVector, AudioNote  # 로봇 스피커 제어
 from builtin_interfaces.msg import Duration as BuiltinDuration
+from std_msgs.msg import Bool, Int32                     # 센서 감지 신호 / 순찰 번호
 
 from tf2_ros import Buffer, TransformListener
 from tf2_geometry_msgs.tf2_geometry_msgs import do_transform_point
@@ -28,63 +30,76 @@ import threading
 import math
 from rclpy.time import Time
 
+
 class PatrolInspectNode(Node):
     def __init__(self):
         super().__init__('patrol_inspect_node')
 
         # ── ROS2 파라미터 선언 ──────────────────────────────
+        # 파라미터 파일(yaml)에서 값을 불러오거나, 기본값 사용
         self.declare_parameter('model_path',
-            '/home/rokey/slam_turtlebot/src/models/arm2/best.pt')
-        self.declare_parameter('inspect_frame_required', 30)
-        self.declare_parameter('inspect_threshold',      0.5)
-        self.declare_parameter('confidence_min',         0.5)
-        self.declare_parameter('target_class',      'unknown')
-        self.declare_parameter('approach_distance',      0.5)   # 1차 approach 거리
-        self.declare_parameter('approach_distance_final',0.3)   # 2차 approach 거리
-        self.declare_parameter('approach_timeout',      10.0)
-        self.declare_parameter('depth_valid_min',        0.2)
-        self.declare_parameter('depth_valid_max',        5.0)
-        self.declare_parameter('sync_tolerance_sec',     0.05)  # 싱크 허용 오차 (50ms)
-        self.declare_parameter('sync_timeout_sec',       2.0)   # 싱크 타임아웃 (초)
+            '/home/rokey/slam_turtlebot/src/models/arm2/best.pt')  # YOLO 모델 경로
+        self.declare_parameter('inspect_frame_required', 30)        # 추론할 총 프레임 수
+        self.declare_parameter('inspect_threshold',      0.5)       # 이상개체 판정 비율 (50%)
+        self.declare_parameter('confidence_min',         0.6)       # YOLO 최소 신뢰도
+        self.declare_parameter('target_class',      'unknown')      # 이상개체 클래스명
+        self.declare_parameter('approach_distance',      0.5)       # 1차 approach 정지 거리 (m)
+        self.declare_parameter('approach_distance_final',0.3)       # 2차 approach 정지 거리 (m)
+        self.declare_parameter('approach_timeout',      10.0)       # approach 타임아웃 (초)
+        self.declare_parameter('depth_valid_min',        0.2)       # 유효 depth 최솟값 (m)
+        self.declare_parameter('depth_valid_max',        5.0)       # 유효 depth 최댓값 (m)
+        self.declare_parameter('sync_tolerance_sec',     0.05)      # RGB-Depth 싱크 허용 오차 (50ms)
+        self.declare_parameter('sync_timeout_sec',       2.0)       # 싱크 대기 타임아웃 (초)
 
-        self.bridge = CvBridge()
-        self.lock   = threading.Lock()
+        self.bridge = CvBridge()        # ROS Image ↔ OpenCV 변환기
+        self.lock   = threading.Lock() # 멀티스레드 공유 자원 보호용 락
 
-        # ── 토픽 이름 ──
+        # ── 토픽 이름 (네임스페이스 포함) ──
         ns          = self.get_namespace()
-        depth_topic = f'{ns}/oakd/stereo/image_raw'
-        rgb_topic   = f'{ns}/oakd/rgb/image_raw/compressed'
-        info_topic  = f'{ns}/oakd/rgb/camera_info'
+        depth_topic = f'{ns}/oakd/stereo/image_raw'          # Depth 이미지 토픽
+        rgb_topic   = f'{ns}/oakd/rgb/image_raw/compressed'  # RGB 압축 이미지 토픽
+        info_topic  = f'{ns}/oakd/rgb/camera_info'           # 카메라 내부 파라미터 토픽
 
-        # ── 이미지 버퍼 ──
-        self.rgb_image    = None
-        self.depth_image  = None
-        self.K            = None
-        self.camera_frame = None
+        # ── 이미지 버퍼 (콜백에서 수신한 최신 프레임 저장) ──
+        self.rgb_image    = None  # 최신 RGB 이미지
+        self.depth_image  = None  # 최신 Depth 이미지
+        self.K            = None  # 카메라 내부 행렬 (3x3)
+        self.camera_frame = None  # Depth 이미지의 frame_id (TF 변환에 사용)
 
-        # ── 타임스탬프 버퍼 (싱크용) ──
-        self.rgb_stamp   = None   # RGB 수신 시각 (초)
-        self.depth_stamp = None   # Depth 수신 시각 (초)
+        # ── 타임스탬프 버퍼 (RGB-Depth 싱크 판단용) ──
+        self.rgb_stamp   = None  # 최신 RGB 수신 시각 (초 단위 float)
+        self.depth_stamp = None  # 최신 Depth 수신 시각 (초 단위 float)
 
-        # ── 로그 중복 방지 ──
+        # ── 로그 중복 방지 플래그 (최초 1회만 로그 출력) ──
         self.logged_rgb   = False
         self.logged_depth = False
         self.logged_K     = False
 
-        # ── 트리거 ──
+        # ── 외부 웹캠 트리거 수신 플래그 ──
+        # /target_event 토픽에서 True 수신 시 순찰 시작
         self.object_detected = False
 
-        # ── 추론 상태 ──
-        self.is_inspecting       = False
-        self.inspect_frame_count = 0
-        self.anomaly_hits        = 0
-        self.inspect_done        = False
-        self.anomaly_result      = False
+        # ── YOLO 추론 상태 관리 ──
+        self.is_inspecting       = False  # 현재 추론 진행 중 여부
+        self.inspect_frame_count = 0      # 현재까지 추론한 프레임 수
+        self.anomaly_hits        = 0      # 이상개체 탐지된 프레임 수
+        self.inspect_done        = False  # 추론 완료 여부
+        self.anomaly_result      = False  # 최종 이상개체 판정 결과
 
-        # ── approach용 박스 중심 픽셀 ──
-        self.target_cx   = None
-        self.target_cy   = None
-        self.target_conf = 0.0
+        # ── approach 목표 픽셀 좌표 (추론 중 가장 높은 conf의 박스 중심) ──
+        self.target_cx   = None  # 박스 중심 x 픽셀
+        self.target_cy   = None  # 박스 중심 y 픽셀
+        self.target_conf = 0.0   # 해당 박스의 최대 신뢰도
+
+        # ── 별도 센서 감지 플래그 ──
+        # /amr2/unknown 토픽에서 True 수신 시 True로 설정
+        self.sensor_detected = False
+
+        # ── AMCL 로봇 위치 (map 기준) ──
+        # /robot1/amcl_pose 토픽에서 업데이트
+        self.robot_x           = 0.0   # 로봇 x 좌표 (m)
+        self.robot_y           = 0.0   # 로봇 y 좌표 (m)
+        self.robot_orientation = None  # 로봇 방향 (Quaternion)
 
         # ── YOLO 모델 로드 ──
         model_path = self.p('model_path')
@@ -92,50 +107,103 @@ class PatrolInspectNode(Node):
         self.yolo = YOLO(model_path)
         self.get_logger().info('YOLO 모델 로드 완료')
 
-        # ── TF 버퍼/리스너 ──
+        # ── TF 버퍼/리스너 (카메라 좌표 → map 좌표 변환용) ──
         self.tf_buffer   = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        # ── 경보음 publisher ──
+        # ── 경보음 publisher (로봇 스피커) ──
         self.audio_pub = self.create_publisher(
             AudioNoteVector,
             f'{ns}/cmd_audio',
             10
         )
 
+        # ── 감지 위치 publisher ──
+        # 이상개체 확정 시 로봇의 현재 map 좌표를 발행
+        self.object_pose_pub = self.create_publisher(
+            PointStamped,
+            '/amr2/object_pose',
+            10
+        )
+
+        # ── 현재 순찰 번호 publisher ──
+        # 각 랠리포인트 도착 시 1~7 번호를 발행
+        self.current_goal_pub = self.create_publisher(
+            Int32,
+            '/amr2/current_goal',
+            10
+        )
+
         # ── 토픽 구독 ──
-        self.create_subscription(TargetEvent,     '/detected', self.trigger_cb, 1)
-        self.create_subscription(CameraInfo,      info_topic,  self.info_cb,    1)
-        self.create_subscription(Image,           depth_topic, self.depth_cb,   1)
-        self.create_subscription(CompressedImage, rgb_topic,   self.rgb_cb,     1)
+        self.create_subscription(TargetEvent,              '/target_event',       self.trigger_cb, 1)  # 웹캠 감지 트리거
+        self.create_subscription(CameraInfo,               info_topic,            self.info_cb,    1)  # 카메라 내부 파라미터
+        self.create_subscription(Image,                    depth_topic,           self.depth_cb,   1)  # Depth 이미지
+        self.create_subscription(CompressedImage,          rgb_topic,             self.rgb_cb,     1)  # RGB 압축 이미지
+        self.create_subscription(Bool,                     '/amr2/unknown',       self.sensor_cb,  1)  # 외부 센서 감지 신호
+        self.create_subscription(PoseWithCovarianceStamped,'/robot1/amcl_pose',   self.amcl_cb,    1)  # AMCL 로봇 위치
 
         self.get_logger().info('PatrolInspectNode 초기화 완료')
 
-        # ── GUI 스레드 시작 ──────────────────────
-        self.gui_thread_stop = threading.Event()
+        # ── GUI 스레드 시작 (카메라 창 실시간 표시) ──
+        self.gui_thread_stop = threading.Event()  # 스레드 종료 신호
         self.gui_thread      = threading.Thread(target=self._gui_loop, daemon=True)
         self.gui_thread.start()
 
     # ── 파라미터 헬퍼 ──────────────────────────────────────
     def p(self, name):
+        """파라미터 값을 간단하게 가져오는 헬퍼 함수"""
         return self.get_parameter(name).value
 
     # ── 콜백 ──────────────────────────────────────────────
 
     def trigger_cb(self, msg):
+        """
+        /target_event 콜백
+        외부 웹캠에서 객체 감지 시 object_detected = True로 설정
+        → main 루프의 트리거 대기를 해제하여 순찰 시작
+        """
         if msg.detected and not self.object_detected:
             self.get_logger().info('트리거 수신: 객체 감지됨')
         self.object_detected = msg.detected
 
     def info_cb(self, msg):
+        """
+        카메라 내부 파라미터 콜백
+        K 행렬(초점거리, 주점)을 저장 → depth → 3D 좌표 계산에 사용
+        """
         with self.lock:
             self.K = np.array(msg.k).reshape(3, 3)
         if not self.logged_K:
             self.get_logger().info('CameraInfo 수신 완료')
             self.logged_K = True
 
-# 수정
+    def sensor_cb(self, msg):
+        """
+        /amr2/unknown 콜백 (외부 센서)
+        True 수신 시 sensor_detected 플래그 설정
+        → 2차 approach 후 wait_sensor_and_alarm()에서 확인
+        """
+        if msg.data:
+            self.get_logger().info('센서 수신: 센서값 초과 감지')
+            self.sensor_detected = True
+
+    def amcl_cb(self, msg):
+        """
+        /robot1/amcl_pose 콜백
+        AMCL이 추정한 로봇의 map 기준 위치/방향을 저장
+        → 이상개체 감지 위치 발행 시 사용
+        """
+        self.robot_x           = msg.pose.pose.position.x
+        self.robot_y           = msg.pose.pose.position.y
+        self.robot_orientation = msg.pose.pose.orientation
+
     def depth_cb(self, msg):
+        """
+        Depth 이미지 콜백
+        - depth_image: approach 시 3D 좌표 계산에 사용
+        - camera_frame: TF 변환의 source frame
+        - depth_stamp: RGB-Depth 싱크 판단용 타임스탬프
+        """
         try:
             depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
             if depth is not None and depth.size > 0:
@@ -151,25 +219,33 @@ class PatrolInspectNode(Node):
             self.get_logger().error(f'Depth 변환 오류: {e}')
 
     def rgb_cb(self, msg):
+        """
+        RGB 압축 이미지 콜백
+        - rgb_image: YOLO 추론 및 GUI 표시에 사용
+        - rgb_stamp: RGB-Depth 싱크 판단용 타임스탬프
+        """
         try:
             np_arr = np.frombuffer(msg.data, np.uint8)
             rgb    = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             if rgb is not None and rgb.size > 0:
                 with self.lock:
                     self.rgb_image = rgb
-                    # 타임스탬프 저장 (싱크용)
                     self.rgb_stamp = msg.header.stamp.sec + \
                                      msg.header.stamp.nanosec * 1e-9
                 if not self.logged_rgb:
                     self.get_logger().info(f'RGB 이미지 수신: {rgb.shape}')
                     self.logged_rgb = True
 
-                 
         except Exception as e:
             self.get_logger().error(f'RGB 디코딩 오류: {e}')
 
     def _gui_loop(self):
-        """별도 스레드에서 카메라 창 + YOLO bbox 실시간 표시"""
+        """
+        별도 스레드에서 실행되는 카메라 창 표시 루프
+        - 최신 RGB 프레임에 YOLO bbox를 실시간으로 그려서 표시
+        - 이상개체(unknown): 빨간색 / 나머지: 초록색
+        - 화면 좌상단에 현재 추론 상태 오버레이
+        """
         while not self.gui_thread_stop.is_set():
             with self.lock:
                 frame = self.rgb_image.copy() if self.rgb_image is not None else None
@@ -197,7 +273,7 @@ class PatrolInspectNode(Node):
                         )
                         cv2.circle(frame, (cx, cy), 5, color, -1)
 
-                # 현재 추론 상태 오버레이
+                # 현재 추론 상태 오버레이 (Inspecting 중이면 진행률, 아니면 Waiting)
                 status = f'Inspecting: {self.inspect_frame_count}/{self.p("inspect_frame_required")}' \
                          if self.is_inspecting else 'Waiting...'
                 cv2.putText(
@@ -209,14 +285,17 @@ class PatrolInspectNode(Node):
 
             cv2.waitKey(30)
 
-        cv2.destroyAllWindows()        
+        cv2.destroyAllWindows()
 
     # ── 경보음 ────────────────────────────────────────────
 
     def play_alarm(self):
-        """경보음 발행 (880Hz↔440Hz 반복)"""
+        """
+        로봇 스피커로 경보음 발행
+        880Hz → 440Hz → 880Hz → 440Hz, 각 0.3초씩 재생
+        """
         msg = AudioNoteVector()
-        msg.append = False
+        msg.append = False  # 기존 재생 중인 음 덮어쓰기
 
         for freq in [880, 440, 880, 440]:
             note = AudioNote()
@@ -230,9 +309,73 @@ class PatrolInspectNode(Node):
         self.audio_pub.publish(msg)
         self.get_logger().info('경보음 발행!')
 
+    # ── 센서 신호 대기 + 경보음 + pose 발행 ───────────────
+
+    def wait_sensor_and_alarm(self, executor, timeout_sec=10.0):
+        """
+        2차 approach 완료 후 호출.
+        최대 timeout_sec 동안 /amr2/unknown True 신호를 대기.
+        - True 수신 시: 경보음 발행 + 현재 로봇 위치를 /amr2/object_pose로 발행
+        - 타임아웃 시: 조용히 다음 순찰 포인트로 진행
+        Returns: True(센서 감지) / False(타임아웃)
+        """
+        self.sensor_detected = False  # 이전 감지 플래그 초기화
+        start = self.get_clock().now()
+        self.get_logger().info(f'센서 신호 대기 중... (최대 {timeout_sec}초)')
+
+        while rclpy.ok():
+            executor.spin_once(timeout_sec=0.1)
+            elapsed = (self.get_clock().now() - start).nanoseconds / 1e9
+
+            if self.sensor_detected:
+                # 센서 True 수신 → 경보음 + 위치 발행
+                self.get_logger().warn('센서 True 수신! 경보음 발행 및 위치 전송.')
+                self.play_alarm()
+                self._publish_object_pose()
+                return True
+
+            if elapsed > timeout_sec:
+                self.get_logger().info('센서 신호 타임아웃. 경보음 없이 다음 진행.')
+                return False
+
+        return False
+
+    def _publish_object_pose(self):
+        """
+        현재 AMCL 로봇 위치를 /amr2/object_pose 토픽으로 발행
+        이상개체가 감지된 위치(map 기준 x, y, z=0)를 외부에 알림
+        """
+        msg = PointStamped()
+        msg.header.stamp    = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'map'
+        msg.point.x = self.robot_x
+        msg.point.y = self.robot_y
+        msg.point.z = 0.0
+        self.object_pose_pub.publish(msg)
+        self.get_logger().info(
+            f'감지 위치 발행: x={self.robot_x:.2f}, y={self.robot_y:.2f}'
+        )
+
+    # ── 현재 순찰 번호 발행 ────────────────────────────────
+
+    def publish_current_goal(self, goal_index):
+        """
+        각 랠리포인트 도착 시 현재 순찰 번호를 /amr2/current_goal 토픽으로 발행
+        goal_index는 0-based → 1-based로 변환하여 발행 (1~7)
+        """
+        msg = Int32()
+        msg.data = goal_index + 1  # 0-indexed → 1-indexed
+        self.current_goal_pub.publish(msg)
+        self.get_logger().info(f'현재 순찰 번호 발행: {msg.data}')
+
     # ── 추론 제어 ──────────────────────────────────────────
 
     def start_inspect(self):
+        """
+        YOLO 추론 시작 초기화
+        랠리포인트 도착 후 1.5초 대기 뒤 호출됨
+        모든 카운터/플래그/박스 중심 좌표를 초기화하고 추론 시작
+        """
         self.is_inspecting       = True
         self.inspect_frame_count = 0
         self.anomaly_hits        = 0
@@ -244,6 +387,14 @@ class PatrolInspectNode(Node):
         self.get_logger().info('추론 시작...')
 
     def run_inspect_once(self):
+        """
+        메인 루프에서 매 iteration마다 호출되는 추론 함수
+        - 현재 RGB 프레임으로 YOLO 추론 1회 수행
+        - target_class(unknown) 탐지 시 anomaly_hits 증가 및 박스 중심 갱신
+        - inspect_frame_required 프레임 완료 시:
+          - anomaly_hits / total >= inspect_threshold → 이상개체 확정
+          - 아니면 이상없음 처리
+        """
         if not self.is_inspecting:
             return
 
@@ -262,6 +413,7 @@ class PatrolInspectNode(Node):
                 conf     = float(box.conf[0])
                 if cls_name == self.p('target_class'):
                     detected = True
+                    # 가장 높은 신뢰도의 박스 중심 좌표 갱신 (approach용)
                     if conf > self.target_conf:
                         self.target_conf = conf
                         x1, y1, x2, y2  = box.xyxy[0]
@@ -279,6 +431,7 @@ class PatrolInspectNode(Node):
             f'(누적 {self.anomaly_hits}회)'
         )
 
+        # 목표 프레임 수 도달 시 최종 판정
         if self.inspect_frame_count >= self.p('inspect_frame_required'):
             ratio               = self.anomaly_hits / self.p('inspect_frame_required')
             self.anomaly_result = ratio >= self.p('inspect_threshold')
@@ -301,8 +454,10 @@ class PatrolInspectNode(Node):
 
     def get_synced_frame(self, executor):
         """
-        RGB와 Depth 타임스탬프 차이가 sync_tolerance_sec 이내인
-        싱크된 프레임 쌍을 반환. 타임아웃 시 None 반환.
+        RGB와 Depth 타임스탬프 차이가 sync_tolerance_sec(50ms) 이내인
+        싱크된 프레임 쌍을 반환.
+        - 싱크 성공: (rgb, depth) 반환
+        - sync_timeout_sec 초과 시: (None, None) 반환
         """
         timeout   = self.p('sync_timeout_sec')
         tolerance = self.p('sync_tolerance_sec')
@@ -339,9 +494,10 @@ class PatrolInspectNode(Node):
 
     def verify_target(self, executor):
         """
-        1차 approach 완료 후 호출
-        싱크 맞춘 RGB + Depth로 YOLO 1회 추론하여 이상개체 재확인
-        Returns: (verified, cx, cy, depth_image) or (False, None, None, None)
+        1차 approach 완료 후 오탐지 여부를 재확인하는 함수
+        - 싱크된 RGB + Depth 프레임으로 YOLO 1회 추론
+        - 이상개체 재발견 시: (True, cx, cy, depth) 반환
+        - 미발견(오탐지) 시: (False, None, None, None) 반환
         """
         self.get_logger().info('=== 재검증 시작 ===')
 
@@ -351,7 +507,7 @@ class PatrolInspectNode(Node):
             self.get_logger().warn('재검증 실패: 싱크된 프레임 없음')
             return False, None, None, None
 
-        # YOLO 추론 1회
+        # YOLO 추론 1회 - 가장 높은 신뢰도의 이상개체 박스 선택
         results  = self.yolo(rgb, conf=self.p('confidence_min'), verbose=False)
         best_cx, best_cy, best_conf = None, None, 0.0
 
@@ -375,22 +531,29 @@ class PatrolInspectNode(Node):
         )
         return True, best_cx, best_cy, depth
 
-    # ── Approach (공통 로직) ──────────────────────────────
+    # ── Approach 공통 로직 ──────────────────────────────
 
     def _do_approach(self, navigator, executor, cx, cy, depth, stop_distance):
         """
-        주어진 픽셀(cx, cy)과 depth로 3D 좌표 계산 후
-        stop_distance 앞까지 Nav2로 이동
+        픽셀 좌표(cx, cy)와 depth로 3D 좌표를 계산한 뒤
+        stop_distance(m) 앞 지점까지 Nav2로 이동하는 공통 함수
+
+        동작 순서:
+        1. depth[cy, cx]로 거리(z_m) 획득 (mm → m 변환)
+        2. K 행렬로 카메라 좌표계 3D 점 계산
+        3. TF 변환으로 map 좌표계로 변환
+        4. map 좌표에서 stop_distance 앞 목표점 계산
+        5. Nav2로 이동 후 완료 대기
         """
         with self.lock:
-            K     = self.K.copy()           if self.K           is not None else None
+            K     = self.K.copy() if self.K is not None else None
             frame = self.camera_frame
 
         if K is None or frame is None:
             self.get_logger().warn('Approach 실패: K / frame 없음')
             return False
 
-        # depth 읽기 (mm → m)
+        # ── 1. depth 읽기 (mm → m 변환) ──
         z_m   = float(depth[cy, cx]) / 1000.0
         d_min = self.p('depth_valid_min')
         d_max = self.p('depth_valid_max')
@@ -403,14 +566,14 @@ class PatrolInspectNode(Node):
 
         self.get_logger().info(f'거리: {z_m:.2f}m → 목표 정지거리: {stop_distance}m')
 
-        # K 행렬로 3D 좌표 계산
-        fx, fy     = K[0, 0], K[1, 1]
-        cx_k, cy_k = K[0, 2], K[1, 2]
-        X = (cx - cx_k) * z_m / fx
-        Y = (cy - cy_k) * z_m / fy
-        Z = z_m
+        # ── 2. K 행렬로 카메라 좌표계 3D 점 계산 ──
+        fx, fy     = K[0, 0], K[1, 1]  # 초점 거리
+        cx_k, cy_k = K[0, 2], K[1, 2]  # 주점(principal point)
+        X = (cx - cx_k) * z_m / fx     # 카메라 X (좌우)
+        Y = (cy - cy_k) * z_m / fy     # 카메라 Y (상하)
+        Z = z_m                         # 카메라 Z (깊이)
 
-        # TF 변환 (카메라 → 지도)
+        # ── 3. TF 변환 (카메라 좌표계 → map 좌표계) ──
         pt_cam = PointStamped()
         pt_cam.header.frame_id = frame
         pt_cam.header.stamp    = Time().to_msg()
@@ -429,19 +592,28 @@ class PatrolInspectNode(Node):
         mx, my = pt_map.point.x, pt_map.point.y
         self.get_logger().info(f'지도 좌표: x={mx:.2f} y={my:.2f}')
 
-        # 정지 목표 좌표 계산
+        # ── 4. 목표점에서 stop_distance 앞 지점 계산 ──
+        # 원점(0,0)에서 목표 방향 각도를 구해 stop_distance만큼 앞에 정지
         angle  = math.atan2(my, mx)
         goal_x = mx - stop_distance * math.cos(angle)
         goal_y = my - stop_distance * math.sin(angle)
 
-        # Nav2 이동
-        approach_goal = navigator.getPoseStamped(
+        # 접근 방향 설정
+        self.goal_orientation = self.robot_orientation
+
+        # ── 5. Nav2로 이동 ──
+        """approach_goal = navigator.getPoseStamped(
             [goal_x, goal_y],
             TurtleBot4Directions.NORTH
+        )"""
+
+        approach_goal = navigator.getPoseStamped(
+            [goal_x, goal_y],
+            self.goal_orientation
         )
         navigator.startToPose(approach_goal)
 
-        # 완료 대기
+        # 완료 대기 (approach_timeout 초 이내)
         timeout    = self.p('approach_timeout')
         start_time = self.get_clock().now()
 
@@ -461,7 +633,11 @@ class PatrolInspectNode(Node):
         return False
 
     def approach_target(self, navigator, executor):
-        """1차 approach: 싱크 없이 approach_distance(0.5m)까지 접근"""
+        """
+        1차 approach: 추론 중 저장된 박스 중심(target_cx, target_cy)으로
+        approach_distance(0.5m)까지 접근
+        싱크 없이 현재 depth_image를 그대로 사용
+        """
         self.get_logger().info('=== 1차 Approach 시작 (싱크 없음) ===')
 
         with self.lock:
@@ -479,7 +655,11 @@ class PatrolInspectNode(Node):
         )
 
     def approach_target_final(self, navigator, executor, cx, cy, depth):
-        """2차 approach: 싱크된 프레임으로 approach_distance_final(0.3m)까지 접근"""
+        """
+        2차 approach: verify_target()에서 획득한 싱크된 프레임의
+        박스 중심(cx, cy)으로 approach_distance_final(0.3m)까지 접근
+        1차보다 더 가까이 접근하여 센서 감지 범위 내로 진입
+        """
         self.get_logger().info('=== 2차 Approach 시작 (싱크 있음) ===')
 
         return self._do_approach(
@@ -494,31 +674,35 @@ def main():
     rclpy.init()
 
     node     = PatrolInspectNode()
-    executor = MultiThreadedExecutor()
+    executor = MultiThreadedExecutor()  # 멀티스레드 실행기 (콜백 병렬 처리)
     executor.add_node(node)
 
     navigator = TurtleBot4Navigator()
 
+    # 도킹 상태 확인 후 도킹
     if not navigator.getDockedStatus():
         navigator.dock()
 
+    # 초기 위치 설정 및 Nav2 활성화 대기
     initial_pose = navigator.getPoseStamped([0.0, 0.0], TurtleBot4Directions.SOUTH_WEST)
     navigator.setInitialPose(initial_pose)
     navigator.waitUntilNav2Active()
 
+    # 순찰할 랠리포인트 목록 (map 기준 좌표)
     goal_pose = [
         navigator.getPoseStamped([1.39,  2.35], TurtleBot4Directions.EAST ),
-        navigator.getPoseStamped([1.82, 4.22], TurtleBot4Directions.EAST),
-        navigator.getPoseStamped([1.05, 4.6], TurtleBot4Directions.WEST),
-        navigator.getPoseStamped([0.23, 2.8], TurtleBot4Directions.EAST),
+        navigator.getPoseStamped([1.82,  4.22], TurtleBot4Directions.EAST ),
+        navigator.getPoseStamped([1.05,  4.6 ], TurtleBot4Directions.WEST ),
+        navigator.getPoseStamped([0.23,  2.8 ], TurtleBot4Directions.EAST ),
         navigator.getPoseStamped([-2.06, 1.84], TurtleBot4Directions.SOUTH),
-        navigator.getPoseStamped([-0.42, 4.4], TurtleBot4Directions.SOUTH),
+        navigator.getPoseStamped([-0.42, 4.4 ], TurtleBot4Directions.SOUTH),
         navigator.getPoseStamped([-1.53, 4.82], TurtleBot4Directions.WEST ),
     ]
-    home_pose = navigator.getPoseStamped([0.63,  0.87], TurtleBot4Directions.EAST)
+    home_pose = navigator.getPoseStamped([0.63, 0.87], TurtleBot4Directions.EAST)  # 홈 복귀 위치
 
     try:
-        # ── 1. 트리거 대기 ──
+        # ── 1. 외부 웹캠 트리거 대기 ──
+        # /target_event 토픽에서 detected=True 수신 시 순찰 시작
         navigator.get_logger().info('웹캠 감지 신호 대기 중...')
         while rclpy.ok() and not node.object_detected:
             executor.spin_once(timeout_sec=0.1)
@@ -526,7 +710,7 @@ def main():
         if not rclpy.ok():
             return
 
-        # ── 2. 언독 ──
+        # ── 2. 언독 후 순찰 시작 ──
         navigator.get_logger().info('객체 감지됨. 언독 후 순찰 시작.')
         navigator.undock()
 
@@ -537,10 +721,14 @@ def main():
 
         while rclpy.ok():
             executor.spin_once(timeout_sec=0.1)
-            node.run_inspect_once()
+            node.run_inspect_once()  # 이동 중에도 매 루프마다 추론 수행
 
             if navigator.isTaskComplete():
 
+                # ── 골 도착 시 현재 순찰 번호 발행 (/amr2/current_goal) ──
+                node.publish_current_goal(goal_index)
+
+                # 아직 추론 시작 전이면 1.5초 대기 후 추론 시작
                 if not node.is_inspecting and not node.inspect_done:
                     navigator.get_logger().info(
                         f'[{goal_index+1}/{len(goal_pose)}] 도착. 1.5초 대기 후 추론 시작.'
@@ -552,32 +740,36 @@ def main():
                             break
                     node.start_inspect()
 
+                # 추론 완료 시 결과 처리
                 if node.inspect_done:
 
                     if node.anomaly_result:
                         navigator.get_logger().info('이상개체 감지!')
 
-                        # ── 4. 1차 approach (싱크 없이 0.5m) ──
+                        # ── 4. 1차 approach (싱크 없이 0.5m까지 접근) ──
                         success = node.approach_target(navigator, executor)
 
-                        # ── 5. 경보음 발행 ──
-                        node.play_alarm()
-
                         if success:
-                            # ── 6. 재검증 (싱크 맞춰서 YOLO 1회) ──
+                            # ── 5. 재검증 (싱크된 프레임으로 YOLO 1회 추론) ──
                             verified, cx, cy, depth = node.verify_target(executor)
 
                             if verified:
-                                # ── 7. 2차 approach (싱크된 프레임으로 0.3m) ──
+                                # ── 6. 2차 approach (싱크된 프레임으로 0.3m까지 접근) ──
                                 node.approach_target_final(
                                     navigator, executor, cx, cy, depth
                                 )
                             else:
+                                # 재검증에서 미탐지 → 오탐지로 판단
                                 navigator.get_logger().info('오탐지 확인. 다음 포인트로.')
+
+                        # ── 7. 2차 접근 후 센서 신호 최대 10초 대기 ──
+                        # 센서 True 수신 시: 경보음 + 감지 위치 발행
+                        # 타임아웃 시: 조용히 다음 포인트로 이동
+                        node.wait_sensor_and_alarm(executor, timeout_sec=10.0)
 
                     # ── 8. 다음 랠리포인트로 이동 ──
                     goal_index        += 1
-                    node.inspect_done  = False
+                    node.inspect_done  = False  # 추론 상태 초기화
 
                     if goal_index >= len(goal_pose):
                         navigator.get_logger().info('모든 랠리포인트 순찰 완료.')
@@ -589,14 +781,14 @@ def main():
     except KeyboardInterrupt:
         node.get_logger().info('종료 요청.')
 
-    # ── 9. 도킹 복귀 ──
+    # ── 9. 홈 복귀 및 도킹 ──
     navigator.get_logger().info('순찰 완료. 홈 위치로 이동.')
     navigator.startToPose(home_pose)
 
     navigator.dock()
     navigator.get_logger().info('미션 완료. 도킹 복귀.')
-    node.gui_thread_stop.set()
-    node.gui_thread.join()
+    node.gui_thread_stop.set()  # GUI 스레드 종료 신호
+    node.gui_thread.join()      # GUI 스레드 종료 대기
     rclpy.shutdown()
 
 
