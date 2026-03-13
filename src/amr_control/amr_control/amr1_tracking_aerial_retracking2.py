@@ -56,6 +56,7 @@ class TargetTracker(Node):
         # -------- pub / sub --------
         self.create_subscription(Bool, 'occupation', self.occupation_callback, 10)
         self.cmd_vel_pub = self.create_publisher(Twist, '/robot4/cmd_vel', 10)
+        self.tracking_done_pub = self.create_publisher(Bool, 'tracking_done', 10)
 
         # -------- sync --------
         self.rgb_sub = Subscriber(self, CompressedImage, self.rgb_topic)
@@ -319,6 +320,9 @@ class TargetTracker(Node):
                 self.final_sweep_start = None
                 self.last_detected_time = None
                 self.get_logger().info('360 sweep done, tracking end')
+                msg = Bool()
+                msg.data = True
+                self.tracking_done_pub.publish(msg)
             return
 
         if self.last_detected_time is None:

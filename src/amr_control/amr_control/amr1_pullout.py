@@ -29,7 +29,7 @@ class AmrPullout(Node):
         # [수정] 앞에 / 제거
         # 절대 토픽 "/tracking_done" 이 아니라 상대 토픽 "tracking_done" 으로 받음
         # 따라서 노드를 /robot4 네임스페이스로 띄우면 실제 구독 토픽은 /robot4/tracking_done 이 됨
-        self.create_subscription(Bool, "/tracking_done", self.tracking_done_cb, 10)
+        self.create_subscription(Bool, "tracking_done", self.tracking_done_cb, 10)
 
         # Nav2 서버가 켜지면 초기화 끝나는걸로
         self.navigator.waitUntilNav2Active()
