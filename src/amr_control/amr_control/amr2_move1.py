@@ -12,7 +12,7 @@ from rclpy.duration import Duration
 
 from sensor_msgs.msg import Image, CameraInfo, CompressedImage
 from amr_interfaces.msg import TargetEvent               # 외부 웹캠 감지 트리거 메시지
-from geometry_msgs.msg import PointStamped
+from geometry_msgs.msg import PointStamped, PoseStamped
 from geometry_msgs.msg import PoseWithCovarianceStamped  # AMCL 로봇 위치 메시지
 from irobot_create_msgs.msg import AudioNoteVector, AudioNote  # 로봇 스피커 제어
 from builtin_interfaces.msg import Duration as BuiltinDuration
@@ -135,7 +135,7 @@ class PatrolInspectNode(Node):
         )
 
         # ── 토픽 구독 ──
-        self.create_subscription(TargetEvent,              '/target_event',       self.trigger_cb, 1)  # 웹캠 감지 트리거
+        self.create_subscription(TargetEvent,              '/robot1/target_event',       self.trigger_cb, 1)  # 웹캠 감지 트리거
         self.create_subscription(CameraInfo,               info_topic,            self.info_cb,    1)  # 카메라 내부 파라미터
         self.create_subscription(Image,                    depth_topic,           self.depth_cb,   1)  # Depth 이미지
         self.create_subscription(CompressedImage,          rgb_topic,             self.rgb_cb,     1)  # RGB 압축 이미지
@@ -531,6 +531,27 @@ class PatrolInspectNode(Node):
         )
         return True, best_cx, best_cy, depth
 
+
+    def _get_pose(self, goal_x, goal_y, goal_o):
+        """
+        맵 좌표 (goal_x, goal_y)와 방향(goal_o)으로 목표 Pose를 설정.
+        yaw=0으로 고정하거나 로봇 현재 방향(goal_o)을 그대로 사용할 수 있다.
+        """
+        goal_pose = PoseStamped()
+        goal_pose.header.frame_id = 'map'
+        goal_pose.header.stamp    = self.get_clock().now().to_msg()
+        goal_pose.pose.position.x = goal_x
+        goal_pose.pose.position.y = goal_y
+        goal_pose.pose.position.z = 0.0
+
+        # yaw 각도로 쿼터니언 생성 (현재는 로봇 현재 방향 사용)
+        yaw = 0.0
+        qz  = math.sin(yaw / 2.0)
+        qw  = math.cos(yaw / 2.0)
+        goal_pose.pose.orientation = goal_o  # 로봇 현재 방향 유지
+
+        return goal_pose
+
     # ── Approach 공통 로직 ──────────────────────────────
 
     def _do_approach(self, navigator, executor, cx, cy, depth, stop_distance):
@@ -598,18 +619,11 @@ class PatrolInspectNode(Node):
         goal_x = mx - stop_distance * math.cos(angle)
         goal_y = my - stop_distance * math.sin(angle)
 
-        # 접근 방향 설정
-        self.goal_orientation = self.robot_orientation
 
         # ── 5. Nav2로 이동 ──
-        """approach_goal = navigator.getPoseStamped(
-            [goal_x, goal_y],
-            TurtleBot4Directions.NORTH
-        )"""
-
         approach_goal = navigator.getPoseStamped(
             [goal_x, goal_y],
-            self.goal_orientation
+            TurtleBot4Directions.NORTH
         )
         navigator.startToPose(approach_goal)
 
@@ -684,7 +698,7 @@ def main():
         navigator.dock()
 
     # 초기 위치 설정 및 Nav2 활성화 대기
-    initial_pose = navigator.getPoseStamped([0.0, 0.0], TurtleBot4Directions.SOUTH_WEST)
+    initial_pose = navigator.getPoseStamped([0.0, 0.0], math.degrees(-1.8))
     navigator.setInitialPose(initial_pose)
     navigator.waitUntilNav2Active()
 
@@ -696,7 +710,7 @@ def main():
         navigator.getPoseStamped([0.23,  2.8 ], TurtleBot4Directions.EAST ),
         navigator.getPoseStamped([-2.06, 1.84], TurtleBot4Directions.SOUTH),
         navigator.getPoseStamped([-0.42, 4.4 ], TurtleBot4Directions.SOUTH),
-        navigator.getPoseStamped([-1.53, 4.82], TurtleBot4Directions.WEST ),
+        navigator.getPoseStamped([-1.36, 4.8], TurtleBot4Directions.WEST ),
     ]
     home_pose = navigator.getPoseStamped([0.63, 0.87], TurtleBot4Directions.EAST)  # 홈 복귀 위치
 
