@@ -23,6 +23,7 @@ class AmrMoveout(Node):
         self.navigator = TurtleBot4Navigator()
         # 종복 방지용 : topic 계속 받으면 현재 추적하고 있는애 추적이 우선이지
         self.started = False
+        self.done = False
         # 얘가 해당 이름의 토픽을 국룰 인 10까지만 쌓아두는걸로 하고, 어차피 중복 방지는 started 있으니까
         self.create_subscription(TargetEvent, '/target_event', self.target_cb, 10)
     
@@ -75,9 +76,9 @@ class AmrMoveout(Node):
         # 이제 진짜 출동
         navigator.undock()
         navigator.startFollowWaypoints(goal_pose)
-        
+        self.done = True  # 웨이포인트 완료 → 런처에서 감지
+
         # 점령 다 했으면 이 노드는 사라져 줘야지?
-        # 죽기전에 topic 보내야 하나? 이제 추적 하라고?
 
 def main():
     rclpy.init()

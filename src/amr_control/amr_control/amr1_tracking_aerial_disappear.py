@@ -35,12 +35,12 @@ class TargetTracker(Node):
         self.min_angular_speed = 0.05
         self.center_tolerance_ratio = 0.05
 
-        self.yolo_model_path = '/home/rokey/slam_turtlebot/db/yolo11n.pt'
+        self.yolo_model_path = './db/yolo11n.pt'
         self.model = YOLO(self.yolo_model_path)
 
         ns = self.get_namespace()
-        self.rgb_topic = f'{ns}/oakd/rgb/image_raw/compressed'
-        self.depth_topic = f'{ns}/oakd/stereo/image_raw/compressedDepth'
+        self.rgb_topic = f'robot4/oakd/rgb/image_raw/compressed'
+        self.depth_topic = f'robot4/oakd/stereo/image_raw/compressedDepth'
 
         # -------- pub / sub --------
         self.create_subscription(Bool, 'occupation', self.occupation_callback, 10)
@@ -65,11 +65,11 @@ class TargetTracker(Node):
         # -------- 카메라 내부 파라미터 --------
         self.K = None
         self.camera_frame = None
-        self.camera_info_topic = f'{ns}/oakd/rgb/camera_info'
+        self.camera_info_topic = f'robot4/oakd/rgb/camera_info'
 
         self.create_subscription(CameraInfo, self.camera_info_topic, self.camera_info_callback, 10)
 
-        self.csv_path = '/home/rokey/slam_turtlebot/src/amr_control/amr_control/data/depth_log.csv'
+        self.csv_path = './src/amr_control/amr_control/data/depth_log.csv'
         self.csv_file = open(self.csv_path, 'a', newline='')
         self.csv_writer = csv.writer(self.csv_file)
 
