@@ -28,7 +28,10 @@ DEPTH_TOPIC = f"{NS}/oakd/stereo/image_raw/compressedDepth"
 RGB_TOPIC   = f"{NS}/oakd/rgb/image_raw/compressed"
 
 
-# ── CompressedDepth 디코딩 ────────────────────────────────────────────────
+# ── CompressedDepth 디코딩 ─────────────
+'''
+COmpresshedDepth
+'''
 def decode_compressed_depth(msg) -> np.ndarray | None:
     raw = np.frombuffer(msg.data, dtype=np.uint8)
 
@@ -42,7 +45,7 @@ def decode_compressed_depth(msg) -> np.ndarray | None:
     return img
 
 
-# ── Pixel Alignment ───────────────────────────────────────────────────────
+# ── Pixel Alignment ───────────────────
 def apply_offset(depth, dx, dy):
     if dx == 0 and dy == 0:
         return depth
@@ -60,7 +63,7 @@ def apply_offset(depth, dx, dy):
     )
 
 
-# ── ROI Median Depth → meter ──────────────────────────────────────────────
+# ── ROI Median Depth → meter ───────────
 def get_depth_to_m(depth_al, x1, y1, x2, y2, shrink=0.5):
     h, w = depth_al.shape[:2]
 
@@ -110,6 +113,7 @@ class DetectDepthNode(Node):
             RGB_TOPIC,
             qos_profile=qos_profile_sensor_data
         )
+        # 
         self.depth_sub = Subscriber(
             self,
             CompressedImage,

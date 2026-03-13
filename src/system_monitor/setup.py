@@ -24,6 +24,12 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'ui_bridge = system_monitor.UI_bridge:main',
+            'ui_command = system_monitor.UI_command:main',
+            'ui_flask = system_monitor.UI_flask:main',
+            'gas_db_logger = system_monitor.v2.gas_db_log:main',
+            'gas_dashboard = system_monitor.v1.app:app.run',
+            
         ],
     },
 )

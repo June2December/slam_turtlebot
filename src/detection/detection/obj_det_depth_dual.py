@@ -51,7 +51,6 @@ RESNET_TRANSFORM = T.Compose([
                 std=[0.229, 0.224, 0.225]),
 ])
 
-
 # ── CompressedDepth 디코딩 ────────────────────────────────────────────────
 def decode_compressed_depth(msg) -> np.ndarray | None:
     raw = np.frombuffer(msg.data, dtype=np.uint8)

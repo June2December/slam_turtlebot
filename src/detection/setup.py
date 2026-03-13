@@ -29,6 +29,9 @@ setup(
             'amr2_detect_old = detection.obj_det_depth:main',
             'amr2_detect = detection.obj_det_amr2:main',
             'amr2_detect_unkonwn = detection.obj_det_depth_unknown:main',
+            'amr2_detect_sync = detection.obj_det_amr2_time_sync:main',
+            'adu_node = detection.adu_ros_node:main',
+            'gas_sub = detection.amr2_gas_sub:main',
         ],
     },
 )

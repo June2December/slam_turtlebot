@@ -11,3 +11,31 @@ __pycache__/
 
 ## 학습 모델에 사용한 코드, 데이터셋 모두 제외
 model_n_dataset/
+
+## Database Private Key 제외
+src/system_monitor/config/defense-db_PrivateKey.json
+
+## 테스트용 코드 모두 제외
+src/system_monitor/system_monitor/v1
+src/system_monitor/system_monitor/dummy
+src/system_monitor/system_monitor/lecture_code_modified
+## database 제외
+src/system_monitor/db
+src/system_monitor/resource
+src/system_monitor/config
+src/system_monitor/resource
+## detection 제외
+src/detection/detection/adu_ros_node.py
+src/detection/detection/adu.py
+src/detection/detection/amr2_gas_sub.py
+src/detection/detection/obj_det_depth_dual.py
+src/detection/detection/obj_det_depth_old.py
+src/detection/detection/obj_det_depth_unknown.py
+src/detection/detection/web.py
+src/detection/detection/detection.html
+
+## 오래된 UI 파일 제외
+src/system_monitor/UI_all_log.html
+src/system_monitor/UI_bridge.py
+src/system_monitor/UI_flask.py
+src/system_monitor/UI.html

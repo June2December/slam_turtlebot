@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>TEST 123</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 24px;
+            font-family: Arial, sans-serif;
+            background: #f4f7fb;
+            color: #1f2937;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .header {
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            margin: 0 0 8px 0;
+            font-size: 32px;
+        }
+
+        .header p {
+            margin: 0;
+            color: #6b7280;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+        }
+
+        .card h2 {
+            margin: 0 0 12px 0;
+            font-size: 16px;
+            color: #6b7280;
+        }
+
+        .value {
+            font-size: 36px;
+            font-weight: bold;
+        }
+
+        .sub {
+            margin-top: 8px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .panel {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+        }
+
+        .panel h2 {
+            margin: 0 0 16px 0;
+            font-size: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #111827;
+            color: #ffffff;
+        }
+
+        th, td {
+            padding: 12px 10px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 14px;
+        }
+
+        .badge-alert {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #fee2e2;
+            color: #b91c1c;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .empty {
+            padding: 24px 0;
+            text-align: center;
+            color: #9ca3af;
+        }
+
+        .footer {
+            margin-top: 18px;
+            color: #6b7280;
+            font-size: 13px;
+        }
+
+        @media (max-width: 900px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .value {
+                font-size: 28px;
+            }
+
+            table, thead, tbody, tr, th, td {
+                font-size: 13px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Gas Monitor Dashboard</h1>
+            <p>Firebase Realtime Database 기반 실시간 가스 모니터링</p>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2>총 측정 횟수</h2>
+                <div class="value" id="total-value">0</div>
+                <div class="sub">누적 detection 로그 수</div>
+            </div>
+
+            <div class="card">
+                <h2>경고 발생 횟수</h2>
+                <div class="value" id="alert-value">0</div>
+                <div class="sub">threshold 이상 violation 수</div>
+            </div>
+
+            <div class="card">
+                <h2>마지막 업데이트</h2>
+                <div class="value" id="last-update" style="font-size:20px;">-</div>
+                <div class="sub">stats.last_update_datetime 기준</div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>최근 경고 로그</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 60px;">No</th>
+                        <th>이름</th>
+                        <th style="width: 120px;">PPM</th>
+                        <th style="width: 220px;">시간</th>
+                        <th style="width: 100px;">상태</th>
+                    </tr>
+                </thead>
+                <tbody id="violation-body">
+                    <tr>
+                        <td colspan="5" class="empty">데이터를 불러오는 중...</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="footer">
+                3초마다 자동 새로고침
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function fetchDashboard() {
+            try {
+                const response = await fetch('/api/dashboard');
+                const data = await response.json();
+
+                document.getElementById('total-value').textContent = data.stats.total ?? 0;
+                document.getElementById('alert-value').textContent = data.stats.alert ?? 0;
+                document.getElementById('last-update').textContent = data.stats.last_update_datetime ?? '-';
+
+                const tbody = document.getElementById('violation-body');
+                tbody.innerHTML = '';
+
+                if (!data.violations || data.violations.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="empty">경고 로그가 없습니다.</td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                data.violations.forEach((item, index) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${index + 1}</td>
+                        <td>${item.name ?? '-'}</td>
+                        <td>${item.ppm ?? '-'}</td>
+                        <td>${item.datetime ?? '-'}</td>
+                        <td><span class="badge-alert">ALERT</span></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+            } catch (error) {
+                console.error('dashboard fetch error:', error);
+                const tbody = document.getElementById('violation-body');
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="empty">데이터를 불러오지 못했습니다.</td>
+                    </tr>
+                `;
+            }
+        }
+
+        fetchDashboard();
+        setInterval(fetchDashboard, 3000);
+    </script>
+</body>
+</html>
