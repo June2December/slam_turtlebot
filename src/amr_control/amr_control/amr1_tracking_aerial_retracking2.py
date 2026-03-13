@@ -50,12 +50,12 @@ class TargetTracker(Node):
         self.model = YOLO(self.yolo_model_path)
 
         ns = self.get_namespace()
-        self.rgb_topic = f'robot4/oakd/rgb/image_raw/compressed'
-        self.depth_topic = f'robot4/oakd/stereo/image_raw/compressedDepth'
+        self.rgb_topic = f'/robot4/oakd/rgb/image_raw/compressed'
+        self.depth_topic = f'/robot4/oakd/stereo/image_raw/compressedDepth'
 
         # -------- pub / sub --------
         self.create_subscription(Bool, 'occupation', self.occupation_callback, 10)
-        self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
+        self.cmd_vel_pub = self.create_publisher(Twist, '/robot4/cmd_vel', 10)
 
         # -------- sync --------
         self.rgb_sub = Subscriber(self, CompressedImage, self.rgb_topic)
@@ -158,11 +158,11 @@ class TargetTracker(Node):
         depth_t = depth_msg.header.stamp.sec + depth_msg.header.stamp.nanosec * 1e-9
         dt = abs(rgb_t - depth_t)
 
-        print(f'sync는 되나? | rgb, depth 의 dt={dt:.3f}s')
-
         self.frame_count += 1
         if self.frame_count % 3 != 0:
             return
+
+        print(f'sync는 되나? | rgb, depth 의 dt={dt:.3f}s')
 
         if not self.tracking_enabled:
             return
@@ -209,6 +209,9 @@ class TargetTracker(Node):
             conf = float(box.conf[0].item()) if box.conf is not None else 0.0
             cls_id = int(box.cls[0].item()) if box.cls is not None else -1
             cls_name = self.model.names.get(cls_id, str(cls_id))
+
+            if cls_name != 'enemy':
+                continue
 
             if conf > best_conf:
                 best_box = box.xyxy[0].cpu().numpy().astype(int)
@@ -301,11 +304,16 @@ class TargetTracker(Node):
     # -------- 소실 처리 --------
     def _handle_lost(self):
         now = time.time()
+        print('handle lost 진입')
 
         if self.final_sweep_start is not None:
-            if now - self.final_sweep_start < SWEEP_DURATION:
+            elapsed = now - self.final_sweep_start
+            print(f'리트레킹 | elapsed={elapsed:.1f}s / {SWEEP_DURATION:.1f}s')
+            if elapsed < SWEEP_DURATION:
+                print('회전 명령 발행')
                 self.publish_rotation(SCAN_SPEED)
             else:
+                print('360 sweep 완료 → 정지')
                 self.stop_rotation()
                 self.tracking_enabled = False
                 self.final_sweep_start = None
@@ -314,6 +322,7 @@ class TargetTracker(Node):
             return
 
         if self.last_detected_time is None:
+            print('멈춤1 : 객체탐지된 적 없음')
             self.stop_rotation()
             return
 
