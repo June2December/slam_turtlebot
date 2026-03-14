@@ -28,20 +28,20 @@ setup(
         'console_scripts': [
             'amr1_moveout = amr_control.amr1_moveout_follow_waypoints:main',
             'amr1_pullout = amr_control.amr1_pullout:main',
+            'amr1_track = amr_control.amr1_tracking_aerial_v2:main',
+
             'amr1_tracking_aerial = amr_control.amr1_tracking_aerial:main',
             'amr1_tracking_test1 = amr_control.amr1_tracking_aerial_disappear:main',
-            'amr1_tracking_test2 = amr_control.amr1_tracking_aate_circle:main',
-            'amr1_tracking_test3 = amr_control.amr1_tracking_aerial_retracking:maierial_rotn',
+            'amr1_tracking_test2 = amr_control.amr1_tracking_aerial_rotate_circle:main',
+            'amr1_tracking_test3 = amr_control.amr1_tracking_aerial_retracking:main',
             'amr1_tracking_test4 = amr_control.amr1_tracking_aerial_disappear2:main',
             'amr1_tracking_test6 = amr_control.amr1_tracking_aerial_rotate_circle2:main',
             'amr1_tracking_test7 = amr_control.amr1_rotate_circle2_time:main',
             'amr1_tracking_test8 = amr_control.amr1_rotate_circle3_IMU:main',
             'amr1_tracking_test9 = amr_control.amr1_rotate_circle4_odometry:main',
+
             'amr1_disapper2 = amr_control.amr1_tracking_aerial_disappear2:main',
             'amr1_retrack2 = amr_control.amr1_tracking_aerial_retracking2:main',
-            'amr1_track = amr_control.amr1_tracking_aerial_v2:main',
-            'amr1_delay1 = amr_control.amr1_delay_motion:main',
-            'amr1_delay2 = amr_control.amr1_delay_object_detection:main'
         ],
     },
 )
