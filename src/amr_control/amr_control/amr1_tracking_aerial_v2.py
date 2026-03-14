@@ -48,7 +48,7 @@ class TargetTracker(Node):
         self.final_sweep_start = None
         self.last_angular_z = SCAN_SPEED  # 기본값
 
-        self.yolo_model_path = './db/yolo11n.pt'
+        self.yolo_model_path = './src/models/amr1/yolo11n_amr1_v2.pt'
         self.model = YOLO(self.yolo_model_path)
 
         ns = self.get_namespace()
