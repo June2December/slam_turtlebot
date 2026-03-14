@@ -28,14 +28,20 @@ def generate_launch_description():
     # )
 
 # CH 버전
+    # tracking_node = Node(
+    #     package="amr_control",
+    #     executable="amr1_retrack2",
+    #     name="tracking",
+    #     namespace=robot_ns,
+    #     output="screen",
+    # )
     tracking_node = Node(
         package="amr_control",
-        executable="amr1_retrack2",
+        executable="amr1_track",
         name="tracking",
         namespace=robot_ns,
         output="screen",
     )
-
 
     pullout_node = Node(
         package="amr_control",

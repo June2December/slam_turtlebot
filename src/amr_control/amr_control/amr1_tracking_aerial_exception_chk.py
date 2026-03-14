@@ -46,7 +46,6 @@ class TargetTracker(Node):
         # 소실 처리
         self.last_detected_time = None
         self.final_sweep_start = None
-        self.last_angular_z = SCAN_SPEED  # 기본값
 
         self.yolo_model_path = './db/yolo11n.pt'
         self.model = YOLO(self.yolo_model_path)
@@ -231,13 +230,6 @@ class TargetTracker(Node):
         v = int((y1 + y2) / 2)
 
         print(f'detect cls={best_cls_name}, conf={best_conf:.2f}, center=({u},{v})')
-
-        # 회전 추적: 3D 변환과 무관하게 즉시 실행
-        angular_z = self.compute_angular_z(u, rgb.shape[1])
-        self.last_angular_z = angular_z
-        self.publish_rotation(angular_z)
-        self.get_logger().info(f'cmd angular.z = {angular_z:.3f}')
-
         depth_value = depth[v, u]
 
         cam_xyz = self.pixel_to_3d(u, v, depth_value)
@@ -262,8 +254,6 @@ class TargetTracker(Node):
         track_pose_msg.point.z = map_xyz[2]
         self.track_pose_pub.publish(track_pose_msg)
 
-        print(f"픽셀 중앙: ({u},{v}) depth={depth_value}")
-
         self.csv_writer.writerow([
             time.time(),
             dt,
@@ -274,6 +264,13 @@ class TargetTracker(Node):
             map_xyz[0], map_xyz[1], map_xyz[2],
         ])
         self.csv_file.flush()
+
+        print(f"픽셀 중앙: ({u},{v}) depth={depth_value}")
+
+        angular_z = self.compute_angular_z(u, rgb.shape[1])
+        self.publish_rotation(angular_z)
+
+        self.get_logger().info(f'cmd angular.z = {angular_z:.3f}')
 
     # -------- 화면 중앙 오차로 회전값 계산 --------
     def compute_angular_z(self, u, image_width):
@@ -326,7 +323,7 @@ class TargetTracker(Node):
             print(f'리트레킹 | elapsed={elapsed:.1f}s / {SWEEP_DURATION:.1f}s')
             if elapsed < SWEEP_DURATION:
                 print('회전 명령 발행')
-                self.publish_rotation(self.last_angular_z)
+                self.publish_rotation(SCAN_SPEED)
             else:
                 print('360 sweep 완료 → 정지')
                 self.stop_rotation()
