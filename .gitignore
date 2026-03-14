@@ -11,3 +11,25 @@ __pycache__/
 
 ## 학습 모델에 사용한 코드, 데이터셋 모두 제외
 model_n_dataset/
+
+## 테스트용 파일 (amr_control)
+src/amr_control/amr_control/amr1_rotate_circle.py
+src/amr_control/amr_control/amr1_rotate_circle2_time.py
+src/amr_control/amr_control/amr1_rotate_circle3_IMU.py
+src/amr_control/amr_control/amr1_rotate_circle4_odometry.py
+src/amr_control/amr_control/amr1_tracking_aerial_disappear.py
+src/amr_control/amr_control/amr1_tracking_aerial_disappear2.py
+src/amr_control/amr_control/amr1_tracking_aerial_exception_chk.py
+src/amr_control/amr_control/amr1_tracking_aerial_path.py
+src/amr_control/amr_control/amr1_tracking_aerial_path copy.py
+src/amr_control/amr_control/amr1_tracking_aerial_retracking.py
+src/amr_control/amr_control/amr1_tracking_aerial_retracking2.py
+src/amr_control/amr_control/amr1_tracking_aerial_rotate.py
+src/amr_control/amr_control/amr1_tracking_aerial_rotate_circle.py
+src/amr_control/amr_control/amr1_tracking_aerial_rotate_circle2.py
+
+## 테스트용 파일 (detection)
+src/detection/detection/amr1_observe_v3_rotate_unconfirmed.py
+
+## db 디렉터리
+db/
