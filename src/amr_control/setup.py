@@ -39,6 +39,9 @@ setup(
             'amr1_tracking_test9 = amr_control.amr1_rotate_circle4_odometry:main',
             'amr1_disapper2 = amr_control.amr1_tracking_aerial_disappear2:main',
             'amr1_retrack2 = amr_control.amr1_tracking_aerial_retracking2:main',
+            'amr1_track = amr_control.amr1_tracking_aerial_v2:main',
+            'amr1_delay1 = amr_control.amr1_delay_motion:main',
+            'amr1_delay2 = amr_control.amr1_delay_object_detection:main'
         ],
     },
 )
