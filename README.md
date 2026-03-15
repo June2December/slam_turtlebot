@@ -138,9 +138,6 @@ cd ~/turtlebot4_ws
 cd ~/turtlebot4_ws/src
 
 git clone https://github.com/turtlebot/turtlebot4.git -b humble
-git clone https://github.com/turtlebot/turtlebot4_simulator.git -b humble
-git clone https://github.com/turtlebot/turtlebot4_desktop.git -b humble
-git clone https://github.com/turtlebot/turtlebot4_tutorials.git
 git clone https://github.com/robo-friends/m-explore-ros2.git
 ```
 ### 4. Clone This Repository
