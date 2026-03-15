@@ -67,3 +67,8 @@ db/
 src/system_monitor/system_monitor/UI_bridge_WIP.py
 src/system_monitor/system_monitor/UI_flask_WIP.py
 src/system_monitor/system_monitor/UI_WIP.html
+
+## UI (Keyboard + 배터리 잔량 추가) 및 원본 백업 파일들 제외
+src/system_monitor/system_monitor/UI_flask_keyboard.py
+src/system_monitor/system_monitor/UI_bridge_keyboard.py
+src/system_monitor/system_monitor/UI_keyboard.html

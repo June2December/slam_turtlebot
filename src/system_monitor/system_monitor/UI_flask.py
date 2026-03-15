@@ -37,7 +37,7 @@ VALID_USERS = {
 HOST = "0.0.0.0"
 PORT = 5000
 
-MAP_PNG_PATH = "/home/rokey/rokey_ws/src/system_monitor/system_monitor/third_map.png"
+MAP_PNG_PATH = "/home/sinya/slam_turtlebot/src/system_monitor/system_monitor/third_map.png"
 
 
 # ============================================================
