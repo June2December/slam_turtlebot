@@ -22,7 +22,6 @@
       padding: 24px;
     }
 
-    /* ---------------- 로그인 화면 ---------------- */
     .login-page {
       min-height: 100vh;
       display: flex;
@@ -101,7 +100,6 @@
       min-height: 20px;
     }
 
-    /* ---------------- 대시보드 ---------------- */
     .dashboard-shell {
       background: #eef3f9;
       border: 1px solid #d9e3f0;
@@ -222,6 +220,18 @@
       display: block;
     }
 
+    .webcam-empty {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #64748b;
+      font-weight: 700;
+      font-size: 16px;
+      background: transparent;
+    }
+
     .bbox {
       position: absolute;
       border: 3px solid #ff5a5a;
@@ -260,32 +270,28 @@
       overflow: hidden;
     }
 
-    .map-grid {
+    .map-path {
       position: absolute;
       inset: 0;
-      background-image:
-        linear-gradient(to right, rgba(148,163,184,0.12) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(148,163,184,0.12) 1px, transparent 1px);
-      background-size: 32px 32px;
+      z-index: 1;
+      pointer-events: none;
     }
 
-    .map-robot {
+    .map-overlay {
       position: absolute;
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      transform: translate(-50%, -50%);
-      z-index: 3;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
     }
 
-    .robot-amr1 {
-      background: #3b82f6;
-      box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.16);
-    }
-
-    .robot-amr2 {
-      background: #10b981;
-      box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.16);
+    .map-image {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      z-index: 0;
+      pointer-events: none;
     }
 
     .map-point {
@@ -302,7 +308,10 @@
     }
 
     .drop-point {
-      background: rgba(59, 130, 246, 0.78);
+      background: rgba(59, 130, 246, 0.92);
+      width: 14px;
+      height: 14px;
+      box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.18);
     }
 
     .map-label {
@@ -522,7 +531,6 @@
   </style>
 </head>
 <body>
-  <!-- 로그인 화면 -->
   <div id="loginScreen" class="login-page">
     <div class="login-card">
       <div class="login-title">방공 로키</div>
@@ -543,7 +551,6 @@
     </div>
   </div>
 
-  <!-- 대시보드 화면 -->
   <div id="dashboardScreen" class="page hidden">
     <div class="dashboard-shell">
       <div class="top-tabs">
@@ -553,7 +560,6 @@
 
       <div class="top-bar">
         <div class="site-title">방공 로키</div>
-
         <div class="top-info-card">
           <div class="battery-title">배터리 잔량</div>
           <div class="battery-chip" id="battery1">AMR_1 90%</div>
@@ -565,7 +571,8 @@
         <div class="card">
           <div class="card-title">Webcam</div>
           <div class="viewer-box">
-            <img id="webcamImage" src="/snapshot/webcam" alt="webcam" />
+            <img id="webcamImage" src="" alt="webcam" />
+            <div id="webcamEmpty" class="webcam-empty">탐지 이미지 대기 중</div>
             <div class="bbox-label" id="bboxLabel">Enemy Detected</div>
             <div class="bbox" id="bbox"></div>
           </div>
@@ -574,7 +581,9 @@
         <div class="card">
           <div class="card-title">Map</div>
           <div class="map-canvas" id="mapCanvas">
-            <div class="map-grid"></div>
+            <img id="mapImage" class="map-image" src="/map_image" alt="map" />
+            <svg id="mapPath" class="map-path"></svg>
+            <div id="mapOverlay" class="map-overlay"></div>
           </div>
 
           <div class="robot-status map-status-box" id="robotStatusBox">
@@ -582,6 +591,7 @@
             <div>AMR_2 상태 : Idle</div>
           </div>
         </div>
+
         <div class="card control-card">
           <div class="card-title">수동 조작</div>
 
@@ -628,15 +638,36 @@
 
   <script>
     let latestState = null;
+    let refreshTimer = null;
+    let mapInfo = null;
+
+    const webcamImage = () => document.getElementById("webcamImage");
+    const webcamEmpty = () => document.getElementById("webcamEmpty");
+
+    function initWebcamEvents() {
+      webcamImage().onload = () => {
+        webcamEmpty().style.display = "none";
+      };
+
+      webcamImage().onerror = () => {
+        webcamEmpty().style.display = "flex";
+      };
+    }
 
     function showLogin() {
       document.getElementById("loginScreen").classList.remove("hidden");
       document.getElementById("dashboardScreen").classList.add("hidden");
+
+      if (refreshTimer !== null) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
     }
 
     function showDashboard() {
       document.getElementById("loginScreen").classList.add("hidden");
       document.getElementById("dashboardScreen").classList.remove("hidden");
+      refreshAll();
     }
 
     function goDashboard() {
@@ -647,15 +678,30 @@
       window.location.href = "/logs";
     }
 
+    async function loadMapInfo() {
+      try {
+        const res = await fetch("/api/map_info");
+        const data = await res.json();
+
+        if (res.ok) {
+          mapInfo = data;
+        } else {
+          console.error("failed to load map info", data);
+        }
+      } catch (err) {
+        console.error("map info load failed", err);
+      }
+    }
+
     async function checkSession() {
       try {
         const res = await fetch("/api/session");
         const data = await res.json();
 
         if (data.logged_in) {
-          showDashboard();
           document.getElementById("usernameBox").textContent = `사용자 : ${data.username}`;
-          refreshAll();
+          await loadMapInfo();
+          showDashboard();
         } else {
           showLogin();
         }
@@ -689,8 +735,8 @@
         }
 
         document.getElementById("usernameBox").textContent = `사용자 : ${data.username}`;
+        await loadMapInfo();
         showDashboard();
-        refreshAll();
       } catch (e) {
         errorBox.textContent = "서버 연결 실패";
       }
@@ -701,60 +747,32 @@
       showLogin();
     }
 
-    async function sendTeleop(direction) {
-      const robotId = document.getElementById("robotSelect").value;
-
-      await fetch("/api/teleop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          robot_id: robotId,
-          direction: direction
-        })
-      });
-
-      refreshState();
+    // =========================================================
+    // 비활성 버튼 동작
+    // 화면에는 남겨두되 실제 요청은 보내지 않음
+    // =========================================================
+    function sendTeleop(direction) {
+      console.log("[UI] teleop disabled:", direction);
     }
 
-    async function sendHome() {
-      const robotId = document.getElementById("robotSelect").value;
-
-      await fetch("/api/home", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          robot_id: robotId
-        })
-      });
-
-      refreshState();
+    function sendHome() {
+      console.log("[UI] home disabled");
     }
 
-    async function sendStart() {
-      const robotId = document.getElementById("robotSelect").value;
-
-      await fetch("/api/teleop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          robot_id: robotId,
-          direction: "forward"
-        })
-      });
-
-      refreshState();
+    function sendStart() {
+      console.log("[UI] start disabled");
     }
 
     async function stopAlert() {
-      await fetch("/api/clear_alert", {
-        method: "POST"
-      });
+      await fetch("/api/clear_alert", { method: "POST" });
 
       const sirenBox = document.getElementById("sirenBox");
       const sirenText = document.getElementById("sirenText");
       const alertText = document.getElementById("alertText");
 
       sirenBox.classList.remove("active");
+      sirenBox.style.background = "";
+      sirenBox.style.boxShadow = "";
       sirenText.textContent = "사이렌 OFF";
       alertText.textContent = "정상 상태";
     }
@@ -770,68 +788,113 @@
       });
     }
 
-    function mapToPercent(x, y) {
-      const px = 50 + x * 8;
-      const py = 50 - y * 8;
+    function getRenderedMapRect() {
+      const mapCanvas = document.getElementById("mapCanvas");
+      const containerWidth = mapCanvas.clientWidth;
+      const containerHeight = mapCanvas.clientHeight;
+
+      const imageAspect = mapInfo.width / mapInfo.height;
+      const containerAspect = containerWidth / containerHeight;
+
+      let drawWidth, drawHeight, offsetX, offsetY;
+
+      if (imageAspect > containerAspect) {
+        drawWidth = containerWidth;
+        drawHeight = containerWidth / imageAspect;
+        offsetX = 0;
+        offsetY = (containerHeight - drawHeight) / 2;
+      } else {
+        drawHeight = containerHeight;
+        drawWidth = containerHeight * imageAspect;
+        offsetY = 0;
+        offsetX = (containerWidth - drawWidth) / 2;
+      }
+
       return {
-        x: Math.max(5, Math.min(95, px)),
-        y: Math.max(5, Math.min(95, py))
+        left: offsetX,
+        top: offsetY,
+        width: drawWidth,
+        height: drawHeight
+      };
+    }
+
+    function mapToDisplayPixel(x, y) {
+      if (!mapInfo) return { x: 0, y: 0 };
+
+      const rect = getRenderedMapRect();
+      const rawX = (x - mapInfo.origin_x) / mapInfo.resolution;
+      const rawY = mapInfo.height - ((y - mapInfo.origin_y) / mapInfo.resolution);
+
+      return {
+        x: rect.left + (rawX / mapInfo.width) * rect.width,
+        y: rect.top + (rawY / mapInfo.height) * rect.height
       };
     }
 
     function renderMap(state) {
+      if (!mapInfo) return;
+
       const mapCanvas = document.getElementById("mapCanvas");
-      mapCanvas.innerHTML = `<div class="map-grid"></div>`;
+      const mapOverlay = document.getElementById("mapOverlay");
+      const mapPath = document.getElementById("mapPath");
 
-      const amr1 = state.amr1.pose;
-      const amr2 = state.amr2.pose;
+      const displayWidth = mapCanvas.clientWidth;
+      const displayHeight = mapCanvas.clientHeight;
 
-      const p1 = mapToPercent(amr1.x, amr1.y);
-      const p2 = mapToPercent(amr2.x, amr2.y);
+      mapOverlay.innerHTML = "";
+      mapPath.setAttribute("width", displayWidth);
+      mapPath.setAttribute("height", displayHeight);
+      mapPath.setAttribute("viewBox", `0 0 ${displayWidth} ${displayHeight}`);
+      mapPath.innerHTML = "";
 
-      const amr1Dot = document.createElement("div");
-      amr1Dot.className = "map-robot robot-amr1";
-      amr1Dot.style.left = `${p1.x}%`;
-      amr1Dot.style.top = `${p1.y}%`;
+      const airPoints = state.air_path_points || [];
+      const objectPoints = state.drop_points || [];
 
-      const amr1Label = document.createElement("div");
-      amr1Label.className = "map-label";
-      amr1Label.style.left = `${p1.x}%`;
-      amr1Label.style.top = `${p1.y}%`;
-      amr1Label.textContent = "AMR_1";
+      if (airPoints.length >= 2) {
+        const pointString = airPoints
+          .slice(-150)
+          .map(pt => {
+            const p = mapToDisplayPixel(pt.x, pt.y);
+            return `${p.x},${p.y}`;
+          })
+          .join(" ");
 
-      const amr2Dot = document.createElement("div");
-      amr2Dot.className = "map-robot robot-amr2";
-      amr2Dot.style.left = `${p2.x}%`;
-      amr2Dot.style.top = `${p2.y}%`;
+        const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+        polyline.setAttribute("points", pointString);
+        polyline.setAttribute("fill", "none");
+        polyline.setAttribute("stroke", "rgba(239, 68, 68, 0.9)");
+        polyline.setAttribute("stroke-width", "4");
+        polyline.setAttribute("stroke-linecap", "round");
+        polyline.setAttribute("stroke-linejoin", "round");
+        mapPath.appendChild(polyline);
+      }
 
-      const amr2Label = document.createElement("div");
-      amr2Label.className = "map-label";
-      amr2Label.style.left = `${p2.x}%`;
-      amr2Label.style.top = `${p2.y}%`;
-      amr2Label.textContent = "AMR_2";
+      if (airPoints.length > 0) {
+        const pt = airPoints[airPoints.length - 1];
+        const p = mapToDisplayPixel(pt.x, pt.y);
 
-      mapCanvas.appendChild(amr1Dot);
-      mapCanvas.appendChild(amr1Label);
-      mapCanvas.appendChild(amr2Dot);
-      mapCanvas.appendChild(amr2Label);
-
-      (state.air_path_points || []).slice(-50).forEach(pt => {
-        const p = mapToPercent(pt.x, pt.y);
         const dot = document.createElement("div");
         dot.className = "map-point air-point";
-        dot.style.left = `${p.x}%`;
-        dot.style.top = `${p.y}%`;
-        mapCanvas.appendChild(dot);
-      });
+        dot.style.left = `${p.x}px`;
+        dot.style.top = `${p.y}px`;
+        mapOverlay.appendChild(dot);
 
-      (state.drop_points || []).slice(-50).forEach(pt => {
-        const p = mapToPercent(pt.x, pt.y);
+        const label = document.createElement("div");
+        label.className = "map-label";
+        label.style.left = `${p.x}px`;
+        label.style.top = `${p.y}px`;
+        label.textContent = "Enemy";
+        mapOverlay.appendChild(label);
+      }
+
+      objectPoints.slice(-100).forEach(pt => {
+        const p = mapToDisplayPixel(pt.x, pt.y);
+
         const dot = document.createElement("div");
         dot.className = "map-point drop-point";
-        dot.style.left = `${p.x}%`;
-        dot.style.top = `${p.y}%`;
-        mapCanvas.appendChild(dot);
+        dot.style.left = `${p.x}px`;
+        dot.style.top = `${p.y}px`;
+        mapOverlay.appendChild(dot);
       });
     }
 
@@ -839,8 +902,6 @@
       const sirenBox = document.getElementById("sirenBox");
       const sirenText = document.getElementById("sirenText");
       const alertText = document.getElementById("alertText");
-
-      console.log("[UI] renderAlert:", alert);
 
       if (alert && alert.active && alert.message) {
         sirenBox.classList.add("active");
@@ -856,12 +917,12 @@
         alertText.textContent = "정상 상태";
       }
     }
-    function renderWebcam(state) {
-      const webcamImage = document.getElementById("webcamImage");
-      webcamImage.src = "/snapshot/webcam?t=" + Date.now();
 
+    function renderWebcam(state) {
       const bbox = document.getElementById("bbox");
       const bboxLabel = document.getElementById("bboxLabel");
+
+      webcamImage().src = "/snapshot/webcam?t=" + Date.now();
 
       if (state.amr1.status === "Enemy Detected") {
         bbox.style.display = "block";
@@ -895,7 +956,6 @@
         }
 
         const data = await response.json();
-        console.log("[UI] /api/state =", data);
         latestState = data;
 
         renderBattery(data);
@@ -911,24 +971,33 @@
 
     function refreshAll() {
       refreshState();
-      setInterval(() => {
-        const webcamImage = document.getElementById("webcamImage");
-        webcamImage.src = "/snapshot/webcam?t=" + Date.now();
-      }, 200);
+
+      if (refreshTimer !== null) {
+        clearInterval(refreshTimer);
+      }
+
+      refreshTimer = setInterval(refreshState, 300);
     }
 
-    checkSession();
+    initWebcamEvents();
 
+    loadMapInfo().then(() => {
+      checkSession();
+    });
+
+    // 방향키 수동조작도 비활성화
     document.addEventListener("keydown", (e) => {
       if (document.getElementById("dashboardScreen").classList.contains("hidden")) return;
 
-      if (e.key === "ArrowUp") sendTeleop("forward");
-      if (e.key === "ArrowDown") sendTeleop("backward");
-      if (e.key === "ArrowLeft") sendTeleop("left");
-      if (e.key === "ArrowRight") sendTeleop("right");
-      if (e.key === " ") {
+      if (
+        e.key === "ArrowUp" ||
+        e.key === "ArrowDown" ||
+        e.key === "ArrowLeft" ||
+        e.key === "ArrowRight" ||
+        e.key === " "
+      ) {
         e.preventDefault();
-        sendTeleop("stop");
+        console.log("[UI] keyboard teleop disabled");
       }
     });
   </script>
