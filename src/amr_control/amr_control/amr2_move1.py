@@ -659,6 +659,7 @@ def main():
         navigator.getPoseStamped([0.23,  2.8 ], TurtleBot4Directions.EAST ),
         navigator.getPoseStamped([-2.06, 1.84], TurtleBot4Directions.SOUTH),
         navigator.getPoseStamped([-0.42, 4.4 ], TurtleBot4Directions.NORTH),
+        navigator.getPoseStamped([-0.76, 3.0 ], TurtleBot4Directions.NORTH),
         navigator.getPoseStamped([-1.36, 4.8 ], TurtleBot4Directions.WEST ),
     ]
     home_pose = navigator.getPoseStamped([0.63, 0.87], TurtleBot4Directions.EAST)
@@ -721,7 +722,7 @@ def main():
                     wait_start = node.get_clock().now()
                     while rclpy.ok():
                         executor.spin_once(timeout_sec=0.1)
-                        if (node.get_clock().now() - wait_start).nanoseconds / 1e9 >= 1.5:
+                        if (node.get_clock().now() - wait_start).nanoseconds / 1e9 >= 3:
                             break
                     node.start_inspect()
 
