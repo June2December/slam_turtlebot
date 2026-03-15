@@ -573,15 +573,18 @@ class PatrolInspectNode(Node):
 
         # ── 4. 목표점에서 stop_distance 앞 지점 계산 ──
         # 원점(0,0)에서 목표 방향 각도를 구해 stop_distance만큼 앞에 정지
-        angle  = math.atan2(my, mx)
+        angle  = math.atan2(my - self.robot_y, mx - self.robot_x)  # 로봇 → 이상개체 방향
         goal_x = mx - stop_distance * math.cos(angle)
         goal_y = my - stop_distance * math.sin(angle)
+
+        # atan2로 구한 angle을 라디안 → 도(degree)로 변환해서 방향으로 사용
+        heading_deg = math.degrees(angle)
 
 
         # ── 5. Nav2로 이동 ──
         approach_goal = navigator.getPoseStamped(
             [goal_x, goal_y],
-            TurtleBot4Directions.NORTH
+            heading_deg
         )
         navigator.startToPose(approach_goal)
 
