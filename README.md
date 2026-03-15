@@ -5,7 +5,6 @@
 
 Turtlebot4 두 대를 활용하여 군 방공 진지에서 저궤도 적군기를 탐지하고 대응을 수행하는 자율 로봇 시스템입니다. SLAM 기반 자율주행, Computer Vision 기반 객체 탐지, ROS2 통신, IoT 센서 및 Firebase를 통한 실시간 모니터링을 포함합니다.
 
-Autonomous Robotics | Multi-Robot System | Object Detection | Real-time Monitoring
 
 ![Turtlebot4](https://img.shields.io/badge/Turtlebot4-00599C?style=for-the-badge&logo=ros&logoColor=white) ![Nav2](https://img.shields.io/badge/Nav2-Navigation-0A66C2?style=for-the-badge)![SLAM](https://img.shields.io/badge/SLAM-Autonomous%20Mapping-blue?style=for-the-badge) ![ROS2](https://img.shields.io/badge/ROS2-22314E?style=for-the-badge&logo=ros&logoColor=white)
 ![Computer Vision](https://img.shields.io/badge/Computer%20Vision-FF6F00?style=for-the-badge)![Ultralytics YOLO](https://img.shields.io/badge/Ultralytics-YOLO-111111?style=for-the-badge)
