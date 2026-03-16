@@ -1,5 +1,7 @@
 from setuptools import find_packages, setup
 import glob
+import os
+from glob import glob
 
 package_name = 'amr_control'
 
@@ -11,7 +13,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/amr_control/launch', glob.glob('launch/*.launch.py')),
+        (os.path.join('share', package_name, 'config'),
+            glob('config/*.yaml')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -31,17 +34,22 @@ setup(
             'amr1_track = amr_control.amr1_tracking_aerial_v2:main',
 
             'amr1_tracking_aerial = amr_control.amr1_tracking_aerial:main',
-            'amr1_tracking_test1 = amr_control.amr1_tracking_aerial_disappear:main',
-            'amr1_tracking_test2 = amr_control.amr1_tracking_aerial_rotate_circle:main',
-            'amr1_tracking_test3 = amr_control.amr1_tracking_aerial_retracking:main',
-            'amr1_tracking_test4 = amr_control.amr1_tracking_aerial_disappear2:main',
-            'amr1_tracking_test6 = amr_control.amr1_tracking_aerial_rotate_circle2:main',
-            'amr1_tracking_test7 = amr_control.amr1_rotate_circle2_time:main',
-            'amr1_tracking_test8 = amr_control.amr1_rotate_circle3_IMU:main',
-            'amr1_tracking_test9 = amr_control.amr1_rotate_circle4_odometry:main',
+            # 'amr1_tracking_test1 = amr_control.amr1_tracking_aerial_disappear:main',
+            # 'amr1_tracking_test2 = amr_control.amr1_tracking_aerial_rotate_circle:main',
+            # 'amr1_tracking_test3 = amr_control.amr1_tracking_aerial_retracking:main',
+            # 'amr1_tracking_test4 = amr_control.amr1_tracking_aerial_disappear2:main',
+            # 'amr1_tracking_test6 = amr_control.amr1_tracking_aerial_rotate_circle2:main',
+            # 'amr1_tracking_test7 = amr_control.amr1_rotate_circle2_time:main',
+            # 'amr1_tracking_test8 = amr_control.amr1_rotate_circle3_IMU:main',
+            # 'amr1_tracking_test9 = amr_control.amr1_rotate_circle4_odometry:main',
 
-            'amr1_disapper2 = amr_control.amr1_tracking_aerial_disappear2:main',
-            'amr1_retrack2 = amr_control.amr1_tracking_aerial_retracking2:main',
+            # 'amr1_disapper2 = amr_control.amr1_tracking_aerial_disappear2:main',
+            # 'amr1_retrack2 = amr_control.amr1_tracking_aerial_retracking2:main',
+
+            
+            'amr1_delay1 = amr_control.amr1_delay_motion:main',
+            'amr1_delay2 = amr_control.amr1_delay_object_detection:main',
+            'amr2_move1 = amr_control.amr2_move1:main',
         ],
     },
 )

@@ -38,7 +38,7 @@ class PatrolInspectNode(Node):
 
         # ── ROS2 파라미터 선언 ──────────────────────────────
         self.declare_parameter('model_path',
-            '/home/rokey/slam_turtlebot/src/models/arm2/best.pt')  # YOLO 모델 경로
+            '/home/rokey/slam_turtlebot/src/models/arm2/yolo26n.pt')  # YOLO 모델 경로
         self.declare_parameter('inspect_frame_required', 30)        # 추론할 총 프레임 수
         self.declare_parameter('inspect_threshold',      0.5)       # 이상개체 판정 비율 (50%)
         self.declare_parameter('confidence_min',         0.6)       # YOLO 최소 신뢰도
@@ -660,9 +660,9 @@ def main():
         navigator.getPoseStamped([1.82,  4.22], TurtleBot4Directions.WEST ),
         navigator.getPoseStamped([1.05,  4.6 ], TurtleBot4Directions.WEST ),
         navigator.getPoseStamped([0.23,  2.8 ], TurtleBot4Directions.EAST ),
+        navigator.getPoseStamped([-0.76, 3.0 ], TurtleBot4Directions.NORTH),
         navigator.getPoseStamped([-2.06, 1.84], TurtleBot4Directions.SOUTH),
         navigator.getPoseStamped([-0.42, 4.4 ], TurtleBot4Directions.NORTH),
-        navigator.getPoseStamped([-0.76, 3.0 ], TurtleBot4Directions.NORTH),
         navigator.getPoseStamped([-1.36, 4.8 ], TurtleBot4Directions.WEST ),
     ]
     home_pose = navigator.getPoseStamped([0.63, 0.87], TurtleBot4Directions.EAST)
