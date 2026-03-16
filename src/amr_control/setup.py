@@ -30,7 +30,6 @@ setup(
     entry_points={
         'console_scripts': [
             'amr1_moveout = amr_control.amr1_moveout_follow_waypoints:main',
-            'amr1_pullout = amr_control.amr1_pullout:main',
             'amr1_track = amr_control.amr1_tracking_aerial_v2:main',
 
             'amr1_tracking_aerial = amr_control.amr1_tracking_aerial:main',
@@ -50,6 +49,9 @@ setup(
             'amr1_delay1 = amr_control.amr1_delay_motion:main',
             'amr1_delay2 = amr_control.amr1_delay_object_detection:main',
             'amr2_move1 = amr_control.amr2_move1:main',
+
+            'amr1_pullout = amr_control.amr1_pullout:main',
+
         ],
     },
 )

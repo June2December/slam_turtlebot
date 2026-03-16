@@ -5,6 +5,8 @@
 
 Turtlebot4 두 대를 활용하여 군 방공 진지에서 저궤도 적군기를 탐지하고 대응을 수행하는 자율 로봇 시스템입니다. SLAM 기반 자율주행, Computer Vision 기반 객체 탐지, ROS2 통신, IoT 센서 및 Firebase를 통한 실시간 모니터링을 포함합니다.
 
+본 프로젝트는 기존 인력 중심 감시 체계를 보조하기 위한 **멀티 로봇 기반 자율 감시 시스템 프로토타입**으로,  
+저고도 공중 위협에 대한 **탐지 및 대응 시간을 단축하는 것을 목표**로 합니다.
 
 ![Turtlebot4](https://img.shields.io/badge/Turtlebot4-00599C?style=for-the-badge&logo=ros&logoColor=white) ![Nav2](https://img.shields.io/badge/Nav2-Navigation-0A66C2?style=for-the-badge)![SLAM](https://img.shields.io/badge/SLAM-Autonomous%20Mapping-blue?style=for-the-badge) ![ROS2](https://img.shields.io/badge/ROS2-22314E?style=for-the-badge&logo=ros&logoColor=white)
 ![Computer Vision](https://img.shields.io/badge/Computer%20Vision-FF6F00?style=for-the-badge)![Ultralytics YOLO](https://img.shields.io/badge/Ultralytics-YOLO-111111?style=for-the-badge)
@@ -15,6 +17,7 @@ Turtlebot4 두 대를 활용하여 군 방공 진지에서 저궤도 적군기�
 ## System Overview
 
 본 시스템은 멀티 로봇 시스템으로, 각 로봇은 서로 다른 역할을 수행하며 저고도 공중 위협에 대한 탐지와 감시를 수행합니다.
+
 
 ##### AMR 1
 
@@ -57,6 +60,18 @@ Turtlebot4 두 대를 활용하여 군 방공 진지에서 저궤도 적군기�
 
  </br>
 
+## Hardware configuration
+| Component       | Description                           |
+| --------------- | ------------------------------------- |
+| Turtlebot4      | Mobile robot platform                 |
+| Base platform   | iRobot® Create® 3                     |
+| Raspberry Pi 4  | Onboard computing                     |
+| OAK-D Camera    | RGB + Depth perception                |
+| RPLidar A1M8    | 2D LiDAR for SLAM                     |
+| Arduino         | Sensor data acquisition               |
+| Gas Sensors     | Air-quality and harmful gas detection |
+
+
 ## Project Directory
 
 ```
@@ -95,7 +110,7 @@ Turtlebot4 두 대를 활용하여 군 방공 진지에서 저궤도 적군기�
 |   │   ├── 
 |
 │
-└── image
+└── images
 │
 └── README.md
 ```
@@ -104,20 +119,122 @@ Turtlebot4 두 대를 활용하여 군 방공 진지에서 저궤도 적군기�
 
 
 
-## Result? / Video? / 
-.gif or mp4
+## Demo Video 
+### Patrol Waypoints : AMR2가 지정된 waypoint를 따라 순찰
 
+[![Patrol](images/patrol_waypoints.gif)](images/patrol_waypoints.mp4)
 
-## Hardware configuration
-| Component       | Description                           |
-| --------------- | ------------------------------------- |
-| Turtlebot4      | Mobile robot platform                 |
-| Base platform   | iRobot® Create® 3                     |
-| Raspberry Pi 4  | Onboard computing                     |
-| OAK-D Camera    | RGB + Depth perception                |
-| RPLidar A1M8    | 2D LiDAR for SLAM                     |
-| Arduino         | Sensor data acquisition               |
-| Gas Sensors     | Air-quality and harmful gas detection |
+### Aerial Tracking : AMR1이 탐지된 공중 표적을 추적
 
+[![Tracking](images/tracking_aerial.gif)](images/tracking_aerial.mp4)
 
+## Installation
+
+### 1. Environment
+- Ubuntu 22.04
+- ROS2 Humble
+- Python 3.10
+
+### 2. Create Workspace
+```bash
+mkdir -p ~/turtlebot4_ws/src
+cd ~/turtlebot4_ws
+```
+
+### 3. Clone Required Packages
+```bash
+cd ~/turtlebot4_ws/src
+
+git clone https://github.com/turtlebot/turtlebot4.git -b humble
+git clone https://github.com/robo-friends/m-explore-ros2.git
+```
+### 4. Clone This Repository
+```bash
+cd ~/turtlebot4_ws/src
+git clone https://github.com/June2December/slam_turtlebot.git
+```
+
+### 5. Initialize and Update rosdep
+```bash
+cd ~/turtlebot4_ws
+
+if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
+    sudo rosdep init
+fi
+
+source /opt/ros/humble/setup.bash
+rosdep update
+```
+
+### 6. Installation Dependencies
+```bash
+cd ~/turtlebot4_ws
+rosdep install --from-path src -yi --rosdistro humble
+```
+
+### 7. Install Python Dependencies
+```bash
+pip install ultralytics opencv-python flask firebase-admin
+```
+
+### 8. Build Project Packages
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install
+source install/setup.bash
+```
+
+## Run Guide
+AMR2 uses namespace `/robot1` and AMR1 uses namespace `/robot4`.
+Navigation, localization, and RViz should be launched on each corresponding PC.
+### 1. Source Environment
+```bash
+source /opt/ros/humble/setup.bash
+source ~/turtlebot4_ws/install/setup.bash
+```
+
+### 2. Start Localization
+```bash
+ros2 launch turtlebot4_navigation localization.launch.py \
+namespace:=robot1 \
+map:=$HOME/turtlebot4_ws/src/slam_turtlebot/src/map/second_map.yaml
+```
+
+### 3. Start RViz (on each PC)
+```bash
+ros2 launch turtlebot4_viz view_robot.launch.py namespace:=/robot1
+```
+Set the initial pose in RViz using **2D Pose Estimate**.
+
+### 4. Start Nav2
+```bash
+ros2 launch turtlebot4_navigation nav2.launch.py namespace:=/robot1
+```
+
+### 5. Start Detection Node (AMR1)
+```bash
+ros2 run detection amr1_observe_v2_detect
+```
+
+### 6. Start AMR1 Control
+```bash
+ros2 launch amr_control amr1_v2.launch.py
+```
+### 7. Start AMR2 Control
+```bash
+ros2 run amr_control amr2_move1 --ros-args \
+-r __ns:=/robot1 \
+-r /tf:=/robot1/tf \
+-r /tf_static:=/robot1/tf_static \
+```
+
+### 8. Start Monitoring System
+```bash
+cd ~/turtlebot4_ws/src/slam_turtlebot/src/system_monitor/system_monitor
+python3 UI_flask.py
+```
+Web dashboard can be accessed at:
+http://localhost:5000
+ID : admin / PW : 1234
 
